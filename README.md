@@ -69,3 +69,4 @@ To see all available options:
 ```bash
 uv run python main.py --help
 ```
+# ScrumAI
