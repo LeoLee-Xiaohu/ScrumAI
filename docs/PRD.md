@@ -1,8 +1,8 @@
 # Scrum AI — Product Requirements Document (PRD)
 
-**Version:** v0.1  
-**Project Name:** Scrum AI  
-
+> **Version:** 0.1
+> **Status:** In Progress
+> **Last Updated:** Feb 1, 2026
 ---
 
 ## 1. Product Vision (One Sentence)

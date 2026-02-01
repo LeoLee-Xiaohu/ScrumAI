@@ -1,6 +1,6 @@
 # ScrumAI
 
-AI-powered Scrum Master and Product Owner assistant that decomposes high-level goals into executable sub-tasks using Google Gemini.
+AI-powered Scrum Master and Product Owner assistant that decomposes high-level goals into executable sub-tasks, more project details on PRD.md.
 
 ## Prerequisites
 
