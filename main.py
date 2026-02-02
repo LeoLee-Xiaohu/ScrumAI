@@ -52,14 +52,19 @@ Break down the goal into a hierarchical structure of tasks:
 - **Tasks**: Specific, actionable work items (2-5 per story)
 
 ### Step 3: For Each Task, Define
-- `id`: Unique identifier (e.g., "TASK-001")
+- `task_id`: Unique identifier (uuid, e.g., "TASK-001")
 - `title`: Clear, action-oriented title
 - `description`: What needs to be done
-- `dependencies`: List of task IDs this depends on (empty if none)
-- `estimated_hours`: Time estimate (1-8 hours per task)
-- `assigned_role`: Either "Junior Developer", "Senior Developer", or "Human Required"
-- `requires_review`: Boolean - does this need human approval before proceeding?
-- `parallel_group`: Tasks in the same group can run concurrently
+- `status`: Task status (enum: "todo", "in_progress", "blocked", "done")
+- `role`: Role type (enum: "Junior Developer", "Senior Developer", "Product Owner", "Scrum Master")
+- `owner_type`: Either "human" or "ai"
+- `assignee`: Person ID or agent ID (leave empty if unassigned)
+- `estimate_hours`: Time estimate in hours (float, optional, 1-8 hours per task)
+- `story_points`: Story point estimate (int, optional, e.g., 1, 2, 3, 5, 8)
+- `dependencies`: List of task_ids this depends on (empty if none)
+- `acceptance_criteria`: Clear criteria for task completion (markdown/text)
+- `blocker_reason`: Reason for blocking (text, optional, only if status is "blocked")
+- `artifacts`: Links to related docs, code diffs, screenshots (list, optional)
 
 ## Output Format
 Return your response as valid JSON with this structure:
@@ -77,14 +82,19 @@ Return your response as valid JSON with this structure:
       "title": "Story title",
       "tasks": [
         {{
-          "id": "TASK-001",
+          "task_id": "TASK-001",
           "title": "Task title",
           "description": "What needs to be done",
+          "status": "todo",
+          "role": "Junior Developer",
+          "owner_type": "ai",
+          "assignee": "",
+          "estimate_hours": 2.0,
+          "story_points": 2,
           "dependencies": [],
-          "estimated_hours": 2,
-          "assigned_role": "Junior Developer",
-          "requires_review": false,
-          "parallel_group": "A"
+          "acceptance_criteria": "Clear criteria for completion",
+          "blocker_reason": null,
+          "artifacts": [],
         }}
       ]
     }}
