@@ -71,7 +71,8 @@ A unit of work with:
 
 ### 6.2 Role vs Agent
 - **Role** = responsibility/contract (e.g., "Task Decomposer", "QA Evaluator", "Human Architect").
-- **Agent** = a runnable worker that performs a role using prompts + tools.
+- **Agent** = a runnable worker that performs a role using prompts + tools + skills.
+- **Skill** = a reusable capability or knowledge module that agents can invoke (e.g., "code review", "test generation", "API design").
 - One role may be backed by **multiple agents**, and one agent may implement multiple roles in early stages.
 
 ### 6.3 Blocker
@@ -195,7 +196,7 @@ Team-style task assignment with multiple AI and human roles.
 - `evaluation_score` (numeric + rationale)
 - `created_at`, `updated_at`
 
-### 10.2 Role Catalog
+### 10.2 Role Catalog (We should choose whether we need pre-defined role or Agent skill- style like role)
 
 #### AI Agent Role Levels
 - `junior_developer` — Simple tasks, requires more supervision
