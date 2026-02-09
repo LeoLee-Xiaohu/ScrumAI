@@ -1,8 +1,9 @@
 # Scrum AI — Product Requirements Document (PRD)
 
-> **Version:** 0.1
+> **Version:** 0.2
 > **Status:** In Progress
-> **Last Updated:** Feb 1, 2026
+> **Last Updated:** Feb 2, 2026
+
 ---
 
 ## 1. Product Vision (One Sentence)
@@ -13,7 +14,7 @@
 
 ## 2. Background & Context
 
-Today’s “coding agents”:
+Today's "coding agents":
 - **Black-box**: agents run ahead with unclear progress and uncertain correctness; or
 - **babysitting**: humans must confirm every step, creating high cognitive load.
 
@@ -25,24 +26,25 @@ Scrum AI aims to create a **management-first** interface (board / graph) that ma
 
 1. **Product & engineering teams using Scrum/Kanban** to ship software.
 2. **Teams pushing AI adoption** inside enterprises (need visibility, control, and auditability).
-3. Solo builders who want parallel agent execution without losing track of “who is doing what”.
-
+3. Solo builders who want parallel agent execution without losing track of "who is doing what".
 
 ---
 
 ## 4. Problems / Pain Points
 
-1. **Information fragmentation:** agent status, logs, and artifacts are scattered → users forget which agent is doing what.
-2. **Model specialization complexity:** strongest models differ in strengths; most users can’t orchestrate multiple models well.
-3. **Workflow transparency gap:** black-box autonomy vs. babysitting confirmation—no middle ground.
+1. **Information fragmentation:** agent status, logs, and artifacts are scattered — users forget which agent is doing what.
+2. **Model specialization complexity:** strongest models differ in strengths; most users can't orchestrate multiple models well.
+3. **Workflow transparency gap:** black-box autonomy vs. babysitting confirmation — no middle ground.
+4. **Efficiency bottleneck:** single-threaded development — unable to execute multiple tasks concurrently with proper isolation.
+5. **Missing human-AI collaboration:** existing tools focus on individual developers; lack mechanisms for human team collaboration and Scrum workflows.
 
 ---
 
 ## 5. Goals & Non-Goals
 
-### Goals (v0.1–v0.2)
+### Goals
 - Convert one high-level goal into a **task tree** with clear ownership and acceptance criteria.
-- Provide a **One Dashboard** for:
+- Provide a **unified dashboard** for:
   - task status (To Do / In Progress / Blocked / Done),
   - assignments (AI role vs human role),
   - blockers requiring human decision,
@@ -51,7 +53,7 @@ Scrum AI aims to create a **management-first** interface (board / graph) that ma
 
 ### Non-goals (initial)
 - Solving code merge conflicts / task interference in depth.
-- Full “agentic coding” execution at scale (we may add later, but not required for MVP).
+- Full "agentic coding" execution at scale (may add later, but not required for MVP).
 - Perfect generalization across all domains (demo focuses on SaaS app dev tasks).
 
 ---
@@ -68,132 +70,114 @@ A unit of work with:
 - optional dependencies.
 
 ### 6.2 Role vs Agent
-- **Role** = responsibility/contract (e.g., “Task Decomposer”, “QA Evaluator”, “Human Architect”).
-- **Agent** = a runnable worker that performs a role using prompts + tools.
-- One role may be backed by **multiple agents** (e.g., parallel decomposers), and one agent may implement multiple roles in early stages.
+- **Role** = responsibility/contract (e.g., "Task Decomposer", "QA Evaluator", "Human Architect").
+- **Agent** = a runnable worker that performs a role using prompts + tools + skills.
+- **Skill** = a reusable capability or knowledge module that agents can invoke (e.g., "code review", "test generation", "API design").
+- One role may be backed by **multiple agents**, and one agent may implement multiple roles in early stages.
 
 ### 6.3 Blocker
-A task state requiring human decision/approval before progress continues (e.g., choosing between 3 design options, approving UI draft).
+A task state requiring human decision/approval before progress continues (e.g., choosing between design options, approving UI draft).
 
 ### 6.4 Acceptance / Evaluation
-A mechanism to decide whether a task is “Done”:
+A mechanism to decide whether a task is "Done":
 - human review,
 - automated checks (tests, lint, schema validation),
-- LLM-as-judge rubric scoring (cross-model evaluation).
+- LLM-as-judge rubric scoring.
+
+### 6.5 Workspace
+An isolated working environment for task execution:
+- Each task gets its own branch and working directory
+- Enables parallel development without conflicts
+
+### 6.6 Session
+An AI Agent conversation thread within a Workspace:
+- Tied to a specific AI executor
+- Tracks conversation history, tool calls, and outputs
+
+### 6.7 Sprint Context
+Scrum workflow context for team collaboration:
+- Sprint goal and timeline
+- AI-eligible vs human-required stories classification
+- Human checkpoint definitions
 
 ---
 
-## 7. Product Scope & Roadmap 
+## 7. Product Roadmap
 
-### 7.1 Phase 5.1 — Status Visualization + Tasks (MVP)
-**What it is:** an AI-enhanced To-Do list that turns “one big goal” into smaller tasks with status.
+### Phase 1 — Task Decomposition + Visualization (MVP)
+Intelligent task decomposition with visual dashboard.
+- User provides a high-level goal
+- System produces a task tree with role assignments and acceptance criteria
+- Dashboard shows task status and AI workspace state
 
-**Deliverables**
-- Input: user provides a goal (e.g., “Build a user registration feature”).
-- Output: system produces:
-  - a task list + tree structure,
-  - initial status (mostly To Do),
-  - suggested role assignment (AI vs human),
-  - per-task acceptance criteria.
+### Phase 2 — Human-in-the-Loop
+Human approval and guidance integration.
+- Approval notifications and UI
+- Code review integration
+- Blocker management for items requiring human decision
 
-### 7.2 Phase 5.2 — Human-in-the-loop Blocker Handling (v0.2)
-**What it is:** a Dashboard where blocked items surface clearly.
-
-**Deliverables**
-- Visual board + task tree/graph.
-- Blockers create a “Human Decision” queue.
-- Humans can approve/choose options; other branches continue in parallel.
-
-### 7.3 Phase 5.3 — Multi-Agent Roles (v0.3)
-**What it is:** agents become an explicit “team”: different roles collaborate concurrently.
-
-**Deliverables**
-- Role catalog (Decomposer, Dispatcher, Evaluator, Developer, Researcher, etc.).
-- Parallel execution across roles, with logs and handoffs.
-- Stronger “async work” experience (assign tasks and return later).
+### Phase 3 — Multi-Agent Collaboration
+Team-style task assignment with multiple AI and human roles.
+- Role catalog with AI executors and human roles
+- Role-based task dispatch with autonomy levels
+- Sprint context support
 
 ---
 
-## 8. Core User Flows (Step-by-Step)
+## 8. Functional Requirements
 
-### Flow A: From Goal → Task Tree → Assignments (MVP)
-1. **Create Project**
-   - user sets project name + short context (repo? stack? constraints?).
-2. **Submit Goal**
-   - e.g., “Build login UI + backend endpoint”.
-3. **Task Triage / Estimation**
-   - Evaluator agent estimates complexity/duration.
-4. **Decompose**
-   - If above a threshold, Decomposer splits into subtasks:
-     - AI-executable tasks,
-     - human-required tasks (blockers),
-     - tasks suitable for automated acceptance (tests/checks).
-5. **Dispatch**
-   - Dispatcher assigns each subtask to a role (human or AI).
-6. **Render**
-   - UI renders task tree + Kanban columns + owner badges.
-7. **(Optional) Iterate**
-   - user edits task definitions, acceptance criteria, or role assignments.
+### 8.1 Task Management
+- Create / read / update / delete tasks
+- Bulk import from PRD or structured documents
 
-### Flow B: Blocker Resolution (v0.2)
-1. Task becomes **Blocked (Needs Human Decision)**.
-2. System provides **2–3 options** with pros/cons.
-3. Human picks an option or provides guidance.
-4. Task continues (and dependent tasks unblock).
+### 8.2 Task Decomposition
+- LLM-powered task splitting with configurable threshold
+- Outputs: subtasks, dependencies, role suggestions, acceptance criteria
 
-### Flow C: Prompt Improvement Loop (v0.2+)
-1. Prompts are versioned (v1, v2…).
-2. Run same seed tasks through prompts.
-3. Compare evaluation metrics across versions.
-4. Promote the best prompt set to production.
+### 8.3 Task Dispatch & Ownership
+- Owner type: Human / AI
+- Role assignment from catalog
+- Assignee: specific agent or person
+
+### 8.4 Status & Visibility
+- Status states: To Do, In Progress, In Review, Blocked, Done, Cancelled, Failed
+
+### 8.5 Acceptance & Evaluation
+- Each task must include acceptance criteria
+- Evaluation methods: LLM judge, automated checks, manual approval
+
+### 8.6 Prompt Management
+- Store prompt sets by role
+- Track prompt version per task run
 
 ---
 
-## 9. Functional Requirements
+## 9. Non-Functional Requirements
 
-### 9.1 Task Creation & CRUD (Create / read / update / delete
-- Create / read / update / delete tasks.
-- Bulk import: paste PRD (or structured doc) → generate tasks.
+### 9.1 Performance
+- Fast task decomposition response
+- Real-time status updates
+- Support for concurrent AI tasks
 
-### 9.2 Task Decomposition
-- Configurable threshold for when to split tasks (time/effort).
-- Outputs:
-  - subtasks,
-  - dependencies,
-  - role assignment suggestions,
-  - acceptance criteria.
+### 9.2 Security
+- Guard rails to prevent sensitive information exposure
+- Input validation and audit logging
+- Role-based access control
 
-### 9.3 Task Dispatch & Ownership
-- Each task must have:
-  - **Owner type:** Human / AI,
-  - **Role:** from role catalog,
-  - **Assignee:** specific agent (optional) or specific person.
+### 9.3 Scalability
+- Support multiple projects and teams
+- Efficient storage for large task trees
 
-### 9.4 Status & Visibility
-- Status states (initial):
-  - **To Do**
-  - **In Progress**
-  - **Blocked**
-  - **Done**
-  - **Failed (Needs Replan)**
-
-### 9.5 Acceptance & Evaluation
-- Each task must include acceptance criteria (required field).
-- Evaluation methods supported:
-  - rubric-based LLM judge score,
-  - simple automated checks (schema validation),
-  - manual approval (fallback).
-
-### 9.6 Prompt Management (Internal Tooling)
-- Store prompt sets by role.
-- Track prompt version used for each task run.
-- Support running evaluation suites across prompts.
+### 9.4 Reliability
+- Graceful degradation when AI services unavailable
+- Task state persistence
+- Timeout handling for long-running operations
 
 ---
 
-## 10. Data Model (Draft)
+## 10. Data Model
 
-### 10.1 Task Entity (suggested fields)
+### 10.1 Task Entity
 - `task_id` (uuid)
 - `title`
 - `description`
@@ -212,86 +196,57 @@ A mechanism to decide whether a task is “Done”:
 - `evaluation_score` (numeric + rationale)
 - `created_at`, `updated_at`
 
-### 10.2 Role Catalog (initial)
-- **AI roles**
-  - Task Evaluator (triage + estimation)
-  - Task Decomposer (splits into subtasks)
-  - Task Dispatcher (assigns roles/owners)
-  - QA Evaluator (acceptance scoring)
-  - (Future) Developer / Researcher / Designer
-- **Human roles**
-  - Product Owner / PM (sets goals, prioritizes)
-  - Architect / Senior Reviewer (resolves blockers, approves key choices)
-  - Maintainer (final review / merge)
+### 10.2 Role Catalog (We should choose whether we need pre-defined role or Agent skill- style like role)
+
+#### AI Agent Role Levels
+- `junior_developer` — Simple tasks, requires more supervision
+- `senior_developer` — Complex tasks, moderate autonomy
+- `architect` — Design decisions, high autonomy
+
+#### Autonomy Levels
+- `manual` — Human confirmation required for each step
+- `supervised` — Confirmation needed at key checkpoints
+- `autonomous` — Fully automated execution
+
+#### Human Roles
+- `product_owner` — Sets goals and priorities, resolves business blockers
+- `scrum_master` — Process management, sprint planning
+- `reviewer` — Code review, approval authority
+- `architect` — Technical decisions, design approval
+
+#### Role Customization
+- Users can define custom roles with specific capabilities
 
 ---
 
 ## 11. UX / UI Requirements
 
-### MVP UI (must look “bright” in demo)
-1. **Kanban board** with owner badges (AI/Human) and clear status columns.
-2. **Task Tree / Graph view**
-   - nodes = tasks,
-   - edges = dependencies,
-   - color/state = ToDo/InProgress/Blocked/Done.
-3. **Blocker Inbox**
-   - list of tasks waiting for human decision,
-   - each shows options + required context.
-4. **Activity Log**
-   - per task, show agent actions and outputs.
+### MVP UI Components
+1. **Kanban board** with owner badges and status columns
+2. **Task Tree / Graph view** showing dependencies
+3. **Blocker Inbox** for items requiring human decision
+4. **Activity Log** per task
 
-### Nice-to-have (v0.2–v0.3)
-- Gantt-style timeline for estimates.
-- Comparison view for prompt versions (A/B view).
+*Detailed UI specifications to be defined during design phase.*
 
 ---
 
-## 12. Technical Approach (Proposed)
-
-### 12.1 Architecture (MVP will be discussed)
-- **Frontend:** Web app (React/Next.js suggested).
-- **Backend:** API service (FastAPI) that:
-  - stores tasks,
-  - calls LLM,
-  - records logs,
-  - runs evaluation.
-- **LLM Provider:** start with one model (team to pick), but keep an adapter layer for multi-model later.
-- **Storage:** lightweight DB (SQLite/Postgres) + file storage for artifacts.
-
-### 12.2 Integration Strategy
-- Start as an **API-first** service.
-- Optional: wrap as a “plugin” or tool integration later (depends on feasibility and permissions).
-
-### 12.3 Environment Setup (Team Assumption)
-- Pick one model + API key management.
-- Use a client like **Cherry Studio** (or similar) for quick multi-model API testing during development (not mandatory for product).
-
----
-
-## 13. Acceptance Criteria for MVP Demo
+## 12. Acceptance Criteria for MVP Demo
 
 A successful demo should show:
-1. User submits a high-level goal.
-2. System generates a **task tree** with:
-   - clear role assignments,
-   - acceptance criteria,
-   - dependencies.
-3. UI shows:
-   - Kanban + task graph,
-   - at least one **human blocker** task with multiple options,
-   - remaining tasks can proceed in parallel (simulated is OK).
-4. Prompt/eval loop is demonstrated minimally:
-   - show prompt version metadata + one comparison score (even if synthetic).
+1. User submits a high-level goal
+2. System generates a **task tree** with role assignments, acceptance criteria, and dependencies
+3. UI displays task status with at least one **human blocker** task
+4. Basic prompt versioning is demonstrated
 
 ---
 
-## 14. Risks & Open Questions
+## 13. Risks & Open Questions
 
 1. **Role vs agent mapping:** how many agents per role, and when to parallelize?
-2. **Decomposition threshold:** what metric (time, story points, uncertainty) triggers splitting?
-3. **Evaluation reliability:** LLM-as-judge bias and repeatability; need basic calibration.
-4. **Plugin permissions:** feasibility depends on platform constraints.
-5. **Scope creep:** keep MVP focused on “task split + dispatch + visibility”.
+2. **Decomposition threshold:** what metric triggers task splitting?
+3. **Evaluation reliability:** LLM-as-judge bias and repeatability
+4. **Scope creep:** keep MVP focused on core features
 
 ---
 
@@ -301,3 +256,6 @@ A successful demo should show:
 - **Kanban:** visual workflow board (To Do → Doing → Done)
 - **Scrum:** iterative delivery framework (sprints, roles, ceremonies)
 - **Blocker:** a condition preventing a task from progressing without external input
+- **Workspace:** isolated environment for AI task execution
+- **Session:** AI Agent conversation thread within a Workspace
+- **Executor:** AI coding tool that performs tasks
