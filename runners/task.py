@@ -82,7 +82,7 @@ def _display_decomposition(result: TaskDecompositionResult) -> None:
     print(f"  {BOLD}Critical Path:{RESET} {' → '.join(plan.critical_path)}")
 
 
-def run_decomposition(client: LLMClient, task_description: str) -> None:
+def run_decomposition(client: LLMClient, task_description: str, output: str = "decomposed_task.json") -> None:
     """Decompose a high-level goal into sub-tasks.
 
     Mirrors: decompose_task() in original main.py, with Pydantic validation.
@@ -108,7 +108,7 @@ def run_decomposition(client: LLMClient, task_description: str) -> None:
     _display_decomposition(result)
 
     # Save structured output
-    output_file = "decomposed_task.json"
+    output_file = output
     with open(output_file, "w") as f:
         json.dump(result.model_dump(), f, indent=2, ensure_ascii=False)
     print(f"\n  {DIM}Structured output saved to: {output_file}{RESET}\n")

@@ -89,7 +89,7 @@ def cmd_decompose(args: argparse.Namespace) -> None:
         # Use default example
         text = "Develop a login page with email/password authentication"
         logger.info("No input provided, using example: %s", text)
-    run_decomposition(client, text)
+    run_decomposition(client, text, output=args.output)
 
 
 def cmd_list_prompts(_args: argparse.Namespace) -> None:
