@@ -92,6 +92,14 @@ def cmd_decompose(args: argparse.Namespace) -> None:
     run_decomposition(client, text, output=args.output)
 
 
+def cmd_dispatch(args: argparse.Namespace) -> None:
+    """Run the dispatch command."""
+    from runners.dispatch import run_dispatch
+
+    client = get_client(args.provider)
+    run_dispatch(client, input_file=args.file, output_file=args.output)
+
+
 def cmd_list_prompts(_args: argparse.Namespace) -> None:
     """List all available prompts."""
     prompts_dir = Path(__file__).parent / "prompts"
@@ -115,6 +123,8 @@ Examples:
   python main.py brainstorm -f ticket.md       Brainstorm with ticket context
   python main.py score -f ticket.md            Score issue readiness
   python main.py decompose -t "Build a REST API"  Decompose a goal
+  python main.py dispatch                          Dispatch roles for tasks
+  python main.py dispatch -f decomposed_task.json  Dispatch with explicit input
   python main.py prompts                       List available prompts
         """,
     )
@@ -153,6 +163,20 @@ Examples:
         "-o", "--output", default="decomposed_task.json", help="Output JSON file"
     )
     p_decompose.set_defaults(func=cmd_decompose)
+
+    # dispatch
+    p_dispatch = subparsers.add_parser(
+        "dispatch", help="Dispatch roles for decomposed tasks"
+    )
+    p_dispatch.add_argument(
+        "-f", "--file", default="decomposed_task.json",
+        help="Input JSON file with decomposed tasks (default: decomposed_task.json)",
+    )
+    p_dispatch.add_argument(
+        "-o", "--output", default="dispatched_task.json",
+        help="Output JSON file (default: dispatched_task.json)",
+    )
+    p_dispatch.set_defaults(func=cmd_dispatch)
 
     # prompts
     p_prompts = subparsers.add_parser("prompts", help="List available prompts")

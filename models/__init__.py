@@ -19,6 +19,11 @@ from models.task import (
     ExecutionPlan,
     TaskDecompositionResult,
 )
+from models.role import (
+    RoleFitScoring,
+    TaskDispatch,
+    DispatchResult,
+)
 
 __all__ = [
     "BrainstormOption",
@@ -34,4 +39,7 @@ __all__ = [
     "ExecutionPhase",
     "ExecutionPlan",
     "TaskDecompositionResult",
+    "RoleFitScoring",
+    "TaskDispatch",
+    "DispatchResult",
 ]
