@@ -38,5 +38,9 @@ venv.bak/
 
 # Project Specific
 decomposed_task.json
+dispatched_task.json
 score_result.json
 brainstorm_result.json
+
+# Vibe coding context
+cursor_knowledge/

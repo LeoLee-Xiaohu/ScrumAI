@@ -1,8 +1,8 @@
 # Scrum AI — Product Requirements Document (PRD)
 
-> **Version:** 0.2
+> **Version:** 0.3
 > **Status:** In Progress
-> **Last Updated:** Feb 2, 2026
+> **Last Updated:** Feb 19, 2026
 
 ---
 
@@ -70,10 +70,11 @@ A unit of work with:
 - optional dependencies.
 
 ### 6.2 Role vs Agent
-- **Role** = responsibility/contract (e.g., "Task Decomposer", "QA Evaluator", "Human Architect").
+- **Role** = responsibility/contract (e.g., "Task Decomposer", "QA Evaluator", "Reviewer").
 - **Agent** = a runnable worker that performs a role using prompts + tools + skills.
 - **Skill** = a reusable capability or knowledge module that agents can invoke (e.g., "code review", "test generation", "API design").
 - One role may be backed by **multiple agents**, and one agent may implement multiple roles in early stages.
+- Current roles: 2 AI levels (`Junior Developer`, `Senior Developer`) + 3 human roles (`Product Owner`, `Scrum Master`, `Reviewer`).
 
 ### 6.3 Blocker
 A task state requiring human decision/approval before progress continues (e.g., choosing between design options, approving UI draft).
@@ -104,23 +105,26 @@ Scrum workflow context for team collaboration:
 
 ## 7. Product Roadmap
 
-### Phase 1 — Task Decomposition + Visualization (MVP)
-Intelligent task decomposition with visual dashboard.
+### Phase 1 — Task Decomposition + Role Dispatch (MVP)
+Intelligent task decomposition and role-based dispatch.
 - User provides a high-level goal
-- System produces a task tree with role assignments and acceptance criteria
-- Dashboard shows task status and AI workspace state
+- System produces a task tree with acceptance criteria (implemented: `decompose` CLI)
+- Role dispatch evaluates each task on 3 dimensions and assigns roles + autonomy levels (implemented: `dispatch` CLI)
+- Issue readiness scoring (implemented: `score` CLI)
+- Interactive brainstorm for requirement clarification (implemented: `brainstorm` CLI)
 
 ### Phase 2 — Human-in-the-Loop
 Human approval and guidance integration.
 - Approval notifications and UI
 - Code review integration
 - Blocker management for items requiring human decision
+- Dashboard showing task status and AI workspace state
 
 ### Phase 3 — Multi-Agent Collaboration
-Team-style task assignment with multiple AI and human roles.
-- Role catalog with AI executors and human roles
-- Role-based task dispatch with autonomy levels
+Team-style task execution with multiple AI and human agents.
+- Agent execution engine with workspace isolation
 - Sprint context support
+- Pipeline automation (brainstorm → score → decompose → dispatch)
 
 ---
 
@@ -130,17 +134,22 @@ Team-style task assignment with multiple AI and human roles.
 - Create / read / update / delete tasks
 - Bulk import from PRD or structured documents
 
-### 8.2 Task Decomposition
-- LLM-powered task splitting with configurable threshold
-- Outputs: subtasks, dependencies, role suggestions, acceptance criteria
+### 8.2 Task Decomposition (implemented)
+- LLM-powered task splitting from high-level goal into Epic → Stories → Tasks
+- Outputs: subtasks, dependencies, role suggestions, acceptance criteria, execution plan
+- CLI: `python main.py decompose -t "goal"` or `python main.py decompose -f goal.md`
+- Output format: `decomposed_task.json`
 
-### 8.3 Task Dispatch & Ownership
-- Owner type: Human / AI
-- Role assignment from catalog
-- Assignee: specific agent or person
+### 8.3 Task Dispatch & Ownership (implemented)
+Two-step evaluation framework per task:
+- **Step 1 — Delegation scoring**: 3-dimension scoring (Complexity, Risk, Human Judgment; 0-2 each) determines `autonomy_level` (autonomous/supervised/manual) and `owner_type` (ai/human). Adapted from AI Task Delegability Framework (Lubars & Tan, NeurIPS 2019).
+- **Step 2 — Role classification**: Task content matched to one of 5 roles, calibrated by few-shot examples from TaskAllocator dataset (Shafiq et al., 2021).
+- CLI: `python main.py dispatch -f decomposed_task.json`
+- Output format: `dispatched_task.json` (eval-only: task_id + scoring + role + autonomy)
 
 ### 8.4 Status & Visibility
-- Status states: To Do, In Progress, In Review, Blocked, Done, Cancelled, Failed
+- Status states (implemented in code): `todo`, `in_progress`, `blocked`, `done`
+- Future additions: `in_review`, `cancelled`, `failed`
 
 ### 8.5 Acceptance & Evaluation
 - Each task must include acceptance criteria
@@ -182,8 +191,8 @@ Team-style task assignment with multiple AI and human roles.
 - `title`
 - `description`
 - `status` (enum)
-- `role` (enum/string)
-- `owner_type` (human|ai)
+- `role` (string: "Junior Developer", "Senior Developer", "Product Owner", "Scrum Master", "Reviewer")
+- `owner_type` ("human" | "ai")
 - `assignee` (person_id or agent_id)
 - `estimate_hours` (float, optional)
 - `story_points` (int, optional)
@@ -196,25 +205,25 @@ Team-style task assignment with multiple AI and human roles.
 - `evaluation_score` (numeric + rationale)
 - `created_at`, `updated_at`
 
-### 10.2 Role Catalog (We should choose whether we need pre-defined role or Agent skill- style like role)
+### 10.2 Role Catalog
 
-#### AI Agent Role Levels
-- `junior_developer` — Simple tasks, requires more supervision
-- `senior_developer` — Complex tasks, moderate autonomy
-- `architect` — Design decisions, high autonomy
+5 pre-defined roles (Title Case format, matching codebase convention):
 
-#### Autonomy Levels
-- `manual` — Human confirmation required for each step
-- `supervised` — Confirmation needed at key checkpoints
-- `autonomous` — Fully automated execution
+#### AI Roles
+- `Junior Developer` — Simple, well-defined tasks (CRUD, boilerplate, standard patterns). Autonomy: autonomous.
+- `Senior Developer` — Complex tasks requiring design decisions, multi-component work, or domain expertise. Autonomy: supervised.
 
 #### Human Roles
-- `product_owner` — Sets goals and priorities, resolves business blockers
-- `scrum_master` — Process management, sprint planning
-- `reviewer` — Code review, approval authority
-- `architect` — Technical decisions, design approval
+- `Product Owner` — Business decisions, priority calls, goal-setting, requirement clarification. Autonomy: manual.
+- `Scrum Master` — Process management, sprint planning, team coordination, blocker resolution. Autonomy: manual.
+- `Reviewer` — Code review, quality gates, technical approval, design review. Autonomy: manual.
 
-#### Role Customization
+#### Autonomy Levels (assigned by dispatch)
+- `autonomous` — Fully automated AI execution, no human oversight needed (total delegation score 0-2)
+- `supervised` — AI executes with human review at key checkpoints (total delegation score 3-4)
+- `manual` — Human-led execution, AI assists only (total delegation score 5-6)
+
+#### Role Customization (future)
 - Users can define custom roles with specific capabilities
 
 ---
@@ -234,19 +243,21 @@ Team-style task assignment with multiple AI and human roles.
 ## 12. Acceptance Criteria for MVP Demo
 
 A successful demo should show:
-1. User submits a high-level goal
-2. System generates a **task tree** with role assignments, acceptance criteria, and dependencies
-3. UI displays task status with at least one **human blocker** task
-4. Basic prompt versioning is demonstrated
+1. User submits a high-level goal via CLI
+2. System generates a **task tree** with role assignments, acceptance criteria, and dependencies (`decompose`)
+3. System evaluates each task and assigns roles with autonomy levels (`dispatch`)
+4. Output clearly distinguishes AI-autonomous, AI-supervised, and human-manual tasks
+5. Future: UI displays task status with at least one **human blocker** task
 
 ---
 
 ## 13. Risks & Open Questions
 
-1. **Role vs agent mapping:** how many agents per role, and when to parallelize?
+1. **Dispatch consistency:** LLM-based scoring may vary across runs; calibration via few-shot examples helps but does not guarantee identical results.
 2. **Decomposition threshold:** what metric triggers task splitting?
 3. **Evaluation reliability:** LLM-as-judge bias and repeatability
 4. **Scope creep:** keep MVP focused on core features
+5. **Role vs agent mapping:** how many agents per role, and when to parallelize?
 
 ---
 
@@ -259,3 +270,6 @@ A successful demo should show:
 - **Workspace:** isolated environment for AI task execution
 - **Session:** AI Agent conversation thread within a Workspace
 - **Executor:** AI coding tool that performs tasks
+- **Dispatch:** the process of evaluating tasks and assigning roles + autonomy levels
+- **Delegation scoring:** 3-dimension evaluation (Complexity, Risk, Human Judgment) to determine autonomy level
+- **Autonomy level:** degree of human oversight (autonomous / supervised / manual)
