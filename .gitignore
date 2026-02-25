@@ -41,6 +41,7 @@ decomposed_task.json
 dispatched_task.json
 score_result.json
 brainstorm_result.json
+dispatch_evaluation.json
 
 # Vibe coding context
 cursor_knowledge/
