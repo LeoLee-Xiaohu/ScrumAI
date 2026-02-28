@@ -7,6 +7,10 @@ Two-step decision framework:
 Based on:
   - AI Task Delegability Framework (Lubars & Tan, NeurIPS 2019)
   - TaskAllocator dataset (Shafiq et al., JKU 2021) for few-shot calibration
+
+AI roles are domain-based (not seniority-based) because what matters for agent
+routing is the task domain (frontend/backend/infra), not experience level —
+each domain agent carries a different system prompt with relevant frameworks.
 """
 
 from pydantic import BaseModel, Field
@@ -15,18 +19,19 @@ from typing import Literal
 from models.scoring import DimensionScore
 
 
-AI_ROLES = ["Junior Developer", "Senior Developer"]
+AI_ROLES = ["Frontend Developer", "Backend Developer", "Infrastructure Engineer"]
 HUMAN_ROLES = ["Product Owner", "Scrum Master", "Reviewer"]
 ALL_ROLES = AI_ROLES + HUMAN_ROLES
 
 
 class RoleFitScoring(BaseModel):
-    """3-dimension delegation scoring adapted from Lubars & Tan (2019).
+    """4-dimension delegation scoring from Lubars & Tan (2019).
 
-    Dimensions map to the paper's factors:
-      - complexity  ← Difficulty (expertise, effort, creativity)
-      - risk        ← Risk (accountability, uncertainty, impact)
-      - human_judgment ← Trust (machine ability, interpretability, value alignment)
+    All 4 dimensions map 1:1 to the paper's factors:
+      - complexity       ← Difficulty (expertise, effort, creativity)
+      - risk             ← Risk (accountability, uncertainty, impact)
+      - human_judgment   ← Trust (machine ability, interpretability, value alignment)
+      - domain_specificity ← Motivation (reframed: which agent role best fits this task)
     """
 
     complexity: DimensionScore = Field(
@@ -38,6 +43,9 @@ class RoleFitScoring(BaseModel):
     human_judgment: DimensionScore = Field(
         description="Human oversight needed (0=none, 1=checkpoints, 2=continuous)"
     )
+    domain_specificity: DimensionScore = Field(
+        description="Domain expertise required (0=generic, 1=domain-specific, 2=deep expertise)"
+    )
 
 
 class TaskDispatch(BaseModel):
@@ -45,15 +53,15 @@ class TaskDispatch(BaseModel):
 
     task_id: str = Field(description="References task_id from decomposed_task.json")
     scoring: RoleFitScoring
-    total_score: int = Field(ge=0, le=6, description="Sum of 3 dimension scores")
+    total_score: int = Field(ge=0, le=8, description="Sum of 4 dimension scores")
     recommended_role: str = Field(
-        description="One of: Junior Developer, Senior Developer, Product Owner, Scrum Master, Reviewer"
+        description="One of: Frontend Developer, Backend Developer, Infrastructure Engineer, Product Owner, Scrum Master, Reviewer"
     )
     owner_type: Literal["human", "ai"] = Field(
-        description="Derived from total_score: 0-4=ai, 5-6=human"
+        description="Derived from total_score: 0-5=ai, 6-8=human"
     )
     autonomy_level: Literal["manual", "supervised", "autonomous"] = Field(
-        description="Derived from total_score: 0-2=autonomous, 3-4=supervised, 5-6=manual"
+        description="Derived from total_score: 0-2=autonomous, 3-5=supervised, 6-8=manual"
     )
     reasoning: str = Field(description="Brief explanation of role assignment")
 

@@ -74,7 +74,7 @@ A unit of work with:
 - **Agent** = a runnable worker that performs a role using prompts + tools + skills.
 - **Skill** = a reusable capability or knowledge module that agents can invoke (e.g., "code review", "test generation", "API design").
 - One role may be backed by **multiple agents**, and one agent may implement multiple roles in early stages.
-- Current roles: 2 AI levels (`Junior Developer`, `Senior Developer`) + 3 human roles (`Product Owner`, `Scrum Master`, `Reviewer`).
+- Current roles: 3 domain-based AI roles (`Frontend Developer`, `Backend Developer`, `Infrastructure Engineer`) + 3 human roles (`Product Owner`, `Scrum Master`, `Reviewer`).
 
 ### 6.3 Blocker
 A task state requiring human decision/approval before progress continues (e.g., choosing between design options, approving UI draft).
@@ -142,8 +142,8 @@ Team-style task execution with multiple AI and human agents.
 
 ### 8.3 Task Dispatch & Ownership (implemented)
 Two-step evaluation framework per task:
-- **Step 1 — Delegation scoring**: 3-dimension scoring (Complexity, Risk, Human Judgment; 0-2 each) determines `autonomy_level` (autonomous/supervised/manual) and `owner_type` (ai/human). Adapted from AI Task Delegability Framework (Lubars & Tan, NeurIPS 2019).
-- **Step 2 — Role classification**: Task content matched to one of 5 roles, calibrated by few-shot examples from TaskAllocator dataset (Shafiq et al., 2021).
+- **Step 1 — Delegation scoring**: 4-dimension scoring (Complexity, Risk, Human Judgment, Domain Specificity; 0-2 each, max 8) determines `autonomy_level` (autonomous/supervised/manual) and `owner_type` (ai/human). All 4 dimensions from AI Task Delegability Framework (Lubars & Tan, NeurIPS 2019): Difficulty→Complexity, Risk→Risk, Trust→Human Judgment, Motivation→Domain Specificity (reframed for agent routing).
+- **Step 2 — Role classification**: Task content matched to one of 6 domain-based roles (3 AI + 3 human), calibrated by few-shot examples from TaskAllocator dataset (Shafiq et al., 2021).
 - CLI: `python main.py dispatch -f decomposed_task.json`
 - Output format: `dispatched_task.json` (eval-only: task_id + scoring + role + autonomy)
 
@@ -191,7 +191,7 @@ Two-step evaluation framework per task:
 - `title`
 - `description`
 - `status` (enum)
-- `role` (string: "Junior Developer", "Senior Developer", "Product Owner", "Scrum Master", "Reviewer")
+- `role` (string: "Frontend Developer", "Backend Developer", "Infrastructure Engineer", "Product Owner", "Scrum Master", "Reviewer")
 - `owner_type` ("human" | "ai")
 - `assignee` (person_id or agent_id)
 - `estimate_hours` (float, optional)
@@ -207,21 +207,22 @@ Two-step evaluation framework per task:
 
 ### 10.2 Role Catalog
 
-5 pre-defined roles (Title Case format, matching codebase convention):
+6 pre-defined roles (Title Case format, matching codebase convention):
 
-#### AI Roles
-- `Junior Developer` — Simple, well-defined tasks (CRUD, boilerplate, standard patterns). Autonomy: autonomous.
-- `Senior Developer` — Complex tasks requiring design decisions, multi-component work, or domain expertise. Autonomy: supervised.
+#### AI Roles (domain-based)
+- `Frontend Developer` — UI components, styling, client-side logic, React/Vue/Angular, responsive design. Each agent carries a domain-specific system prompt with relevant frameworks.
+- `Backend Developer` — API design, server-side logic, database operations, authentication, data processing.
+- `Infrastructure Engineer` — CI/CD pipelines, deployment, monitoring, logging, Docker, cloud configuration.
 
 #### Human Roles
 - `Product Owner` — Business decisions, priority calls, goal-setting, requirement clarification. Autonomy: manual.
 - `Scrum Master` — Process management, sprint planning, team coordination, blocker resolution. Autonomy: manual.
 - `Reviewer` — Code review, quality gates, technical approval, design review. Autonomy: manual.
 
-#### Autonomy Levels (assigned by dispatch)
+#### Autonomy Levels (assigned by dispatch, 4-dimension scoring, max 8)
 - `autonomous` — Fully automated AI execution, no human oversight needed (total delegation score 0-2)
-- `supervised` — AI executes with human review at key checkpoints (total delegation score 3-4)
-- `manual` — Human-led execution, AI assists only (total delegation score 5-6)
+- `supervised` — AI executes with human review at key checkpoints (total delegation score 3-5)
+- `manual` — Human-led execution, AI assists only (total delegation score 6-8)
 
 #### Role Customization (future)
 - Users can define custom roles with specific capabilities
@@ -271,5 +272,5 @@ A successful demo should show:
 - **Session:** AI Agent conversation thread within a Workspace
 - **Executor:** AI coding tool that performs tasks
 - **Dispatch:** the process of evaluating tasks and assigning roles + autonomy levels
-- **Delegation scoring:** 3-dimension evaluation (Complexity, Risk, Human Judgment) to determine autonomy level
+- **Delegation scoring:** 4-dimension evaluation (Complexity, Risk, Human Judgment, Domain Specificity) to determine autonomy level
 - **Autonomy level:** degree of human oversight (autonomous / supervised / manual)
