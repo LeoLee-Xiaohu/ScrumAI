@@ -113,6 +113,12 @@ def cmd_evaluate_dispatch(args: argparse.Namespace) -> None:
     )
 
 
+def cmd_export_kanban(args: argparse.Namespace) -> None:
+    """Run the export-kanban command."""
+    import vibe_kanban_adapter
+    vibe_kanban_adapter.run_export(args)
+
+
 def cmd_list_prompts(_args: argparse.Namespace) -> None:
     """List all available prompts."""
     prompts_dir = Path(__file__).parent / "prompts"
@@ -139,6 +145,7 @@ Examples:
   python main.py dispatch                          Dispatch roles for tasks
   python main.py dispatch -f decomposed_task.json  Dispatch with explicit input
   python main.py evaluate-dispatch             Evaluate dispatch accuracy
+  python main.py export-kanban                 Export tasks to Vibe Kanban
   python main.py prompts                       List available prompts
         """,
     )
@@ -209,6 +216,29 @@ Examples:
         help="Output JSON file (default: dispatch_evaluation.json)",
     )
     p_evaluate.set_defaults(func=cmd_evaluate_dispatch)
+
+    # export-kanban
+    p_export = subparsers.add_parser(
+        "export-kanban", help="Export decomposed tasks to Vibe Kanban SQLite DB"
+    )
+    import vibe_kanban_adapter
+    p_export.add_argument(
+        "-i", "--decomposed", default="decomposed_task.json",
+        help="Path to decomposed_task.json"
+    )
+    p_export.add_argument(
+        "-e", "--evaluation", default="dispatch_evaluation.json",
+        help="Path to dispatch_evaluation.json"
+    )
+    p_export.add_argument(
+        "--db", default=vibe_kanban_adapter.get_default_db_path(),
+        help="Path to vibe-kanban db.v2.sqlite"
+    )
+    p_export.add_argument(
+        "--project-name", default="ScrumAI Project",
+        help="Name of the vibe-kanban project to create/use"
+    )
+    p_export.set_defaults(func=cmd_export_kanban)
 
     # prompts
     p_prompts = subparsers.add_parser("prompts", help="List available prompts")
