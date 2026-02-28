@@ -2,7 +2,7 @@
 
 > **Version:** 0.3
 > **Status:** In Progress
-> **Last Updated:** Feb 19, 2026
+> **Last Updated:** Feb 28, 2026
 
 ---
 
@@ -109,7 +109,7 @@ Scrum workflow context for team collaboration:
 Intelligent task decomposition and role-based dispatch.
 - User provides a high-level goal
 - System produces a task tree with acceptance criteria (implemented: `decompose` CLI)
-- Role dispatch evaluates each task on 3 dimensions and assigns roles + autonomy levels (implemented: `dispatch` CLI)
+- Role dispatch evaluates each task on 4 dimensions and assigns roles + autonomy levels (implemented: `dispatch` CLI)
 - Issue readiness scoring (implemented: `score` CLI)
 - Interactive brainstorm for requirement clarification (implemented: `brainstorm` CLI)
 
@@ -142,7 +142,7 @@ Team-style task execution with multiple AI and human agents.
 
 ### 8.3 Task Dispatch & Ownership (implemented)
 Two-step evaluation framework per task:
-- **Step 1 — Delegation scoring**: 4-dimension scoring (Complexity, Risk, Human Judgment, Domain Specificity; 0-2 each, max 8) determines `autonomy_level` (autonomous/supervised/manual) and `owner_type` (ai/human). All 4 dimensions from AI Task Delegability Framework (Lubars & Tan, NeurIPS 2019): Difficulty→Complexity, Risk→Risk, Trust→Human Judgment, Motivation→Domain Specificity (reframed for agent routing).
+- **Step 1 — Delegation scoring**: 4-dimension scoring (Complexity, Risk, Human Judgment, Domain Specificity; 0-2 each, max 8) determines `autonomy_level` (autonomous/supervised/manual) and `owner_type` (ai/human). All 4 dimensions adapted from the AI Task Delegability Framework (Lubars & Tan, NeurIPS 2019): Difficulty→Complexity, Risk→Risk, Trust→Human Judgment, Motivation→Domain Specificity (reframed for agent routing: the paper measures human desire/fit for a task; we measure which specialist agent best fits the task).
 - **Step 2 — Role classification**: Task content matched to one of 6 domain-based roles (3 AI + 3 human), calibrated by few-shot examples from TaskAllocator dataset (Shafiq et al., 2021).
 - CLI: `python main.py dispatch -f decomposed_task.json`
 - Output format: `dispatched_task.json` (eval-only: task_id + scoring + role + autonomy)
@@ -217,7 +217,7 @@ Two-step evaluation framework per task:
 #### Human Roles
 - `Product Owner` — Business decisions, priority calls, goal-setting, requirement clarification. Autonomy: manual.
 - `Scrum Master` — Process management, sprint planning, team coordination, blocker resolution. Autonomy: manual.
-- `Reviewer` — Code review, quality gates, technical approval, design review. Autonomy: manual.
+- `Reviewer` — Quality gates, technical approval, design review, security audit, QA oversight. Autonomy: manual.
 
 #### Autonomy Levels (assigned by dispatch, 4-dimension scoring, max 8)
 - `autonomous` — Fully automated AI execution, no human oversight needed (total delegation score 0-2)
