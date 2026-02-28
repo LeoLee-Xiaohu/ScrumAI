@@ -115,21 +115,11 @@ def cmd_evaluate_dispatch(args: argparse.Namespace) -> None:
 
 def cmd_export_kanban(args: argparse.Namespace) -> None:
     """Run the export-kanban command."""
-    import vibe_kanban_adapter
-    
-    if getattr(args, 'use_mcp', False):
-        from mcp_adapter import run_mcp_export
-        print("Using MCP mode...")
-        success = run_mcp_export(args)
-        if not success:
-            if not getattr(args, 'no_fallback', False):
-                print("\nFalling back to SQLite mode...")
-                vibe_kanban_adapter.run_export(args)
-            else:
-                print("Export failed.")
-                sys.exit(1)
-    else:
-        vibe_kanban_adapter.run_export(args)
+    from mcp_adapter import run_mcp_export
+    success = run_mcp_export(args)
+    if not success:
+        print("Export failed.")
+        sys.exit(1)
 
 
 def cmd_list_prompts(_args: argparse.Namespace) -> None:
@@ -232,9 +222,8 @@ Examples:
 
     # export-kanban
     p_export = subparsers.add_parser(
-        "export-kanban", help="Export decomposed tasks to Vibe Kanban"
+        "export-kanban", help="Export decomposed tasks to Vibe Kanban via MCP"
     )
-    import vibe_kanban_adapter
     p_export.add_argument(
         "-i", "--decomposed", default="decomposed_task.json",
         help="Path to decomposed_task.json"
@@ -244,20 +233,8 @@ Examples:
         help="Path to dispatch_evaluation.json"
     )
     p_export.add_argument(
-        "--db", default=vibe_kanban_adapter.get_default_db_path(),
-        help="Path to vibe-kanban db.v2.sqlite (SQLite mode)"
-    )
-    p_export.add_argument(
         "--project-name", default="ScrumAI Project",
-        help="Name of the vibe-kanban project to create/use"
-    )
-    p_export.add_argument(
-        "--use-mcp", action="store_true",
-        help="Use MCP Server instead of direct SQLite access (recommended)"
-    )
-    p_export.add_argument(
-        "--no-fallback", action="store_true",
-        help="Don't fall back to SQLite if MCP fails"
+        help="Name of the vibe-kanban project"
     )
     p_export.set_defaults(func=cmd_export_kanban)
 

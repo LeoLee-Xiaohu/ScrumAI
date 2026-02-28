@@ -1,48 +1,17 @@
-# Vibe Kanban Integration & Configuration Guide
+# Vibe Kanban Integration Guide
 
 This guide explains how to connect **ScrumAI** with **Vibe Kanban** to transform AI-generated task decompositions and dispatch evaluations into actionable Kanban boards.
 
 ## 1. Prerequisites
 
 *   **ScrumAI** project set up locally.
-*   **Vibe Kanban** installed or available via `npx`.
-    *   If not installed, you can run it using: `npx vibe-kanban`.
-    *   Ensure you have run `vibe-kanban` at least once so the local database is initialized.
+*   **Vibe Kanban** running on your local machine.
+    *   Run: `npx vibe-kanban`
+    *   Wait for it to open in your browser (typically http://127.0.0.1:61652)
+    *   Sign in with GitHub or Google account
 *   **Node.js/npm** (required for MCP mode).
 
-## 2. Integration Overview
-
-ScrumAI supports two methods to integrate with Vibe Kanban:
-
-### Option A: MCP Server (Recommended)
-Uses the Vibe Kanban MCP Server via stdio for cleaner integration.
-
-**Advantages:**
-- Cross-platform compatible
-- No direct database access required
-- Uses official Vibe Kanban API
-- Supports future features (task execution, etc.)
-
-### Option B: Direct SQLite (Legacy)
-Direct SQLite adapter (`vibe_kanban_adapter.py`) for backward compatibility.
-
-## 3. Database Configuration (SQLite Mode)
-
-The integration script needs to locate the Vibe Kanban SQLite database (`db.v2.sqlite`).
-
-### Default Path
-By default, the script automatically searches in standard OS locations:
-*   **macOS:** `~/Library/Application Support/ai.bloop.vibe-kanban/db.v2.sqlite`
-*   **Linux:** `~/.local/share/vibe-kanban/db.v2.sqlite`
-
-### Custom Path
-If you are running Vibe Kanban in a custom location (e.g., a local dev build) or on a different OS, you can specify the database path using the `--db` flag:
-
-```bash
-python main.py export-kanban --db "/path/to/your/db.v2.sqlite"
-```
-
-## 4. Usage Instructions
+## 2. Usage Instructions
 
 ### Step 1: Generate Tasks
 Run your usual ScrumAI workflow to generate the decomposed tasks and evaluations:
@@ -53,25 +22,31 @@ uv run python main.py dispatch
 uv run python main.py evaluate-dispatch
 ```
 
-### Step 2: Export to Vibe Kanban
+### Step 2: Start Vibe Kanban
 
-#### Using MCP Mode (Recommended)
+Open a terminal and run:
+
 ```bash
-uv run python main.py export-kanban --use-mcp
+npx vibe-kanban
+```
+
+Wait for it to open in your browser, then:
+1. Sign in with GitHub or Google
+2. Create a new project (e.g., "ScrumAI Project")
+3. Add some columns (To Do, In Progress, Done)
+
+### Step 3: Export to Vibe Kanban
+
+```bash
+uv run python main.py export-kanban --project-name "Your Project Name"
 ```
 
 **Options:**
-*   `--project-name`: Specify the project name in Vibe Kanban (Default: "ScrumAI Project").
-*   `-i` / `--decomposed`: Custom path to decomposed JSON.
-*   `-e` / `--evaluation`: Custom path to evaluation JSON.
-*   `--no-fallback`: Don't fall back to SQLite if MCP fails.
+*   `--project-name`: The project name in Vibe Kanban (Default: "ScrumAI Project")
+*   `-i` / `--decomposed`: Custom path to decomposed JSON (Default: decomposed_task.json)
+*   `-e` / `--evaluation`: Custom path to evaluation JSON (Default: dispatch_evaluation.json)
 
-#### Using SQLite Mode (Legacy)
-```bash
-uv run python main.py export-kanban
-```
-
-## 5. How it Works (Data Mapping)
+## 3. How it Works (Data Mapping)
 
 ### Task Details
 Every task in Vibe Kanban will have a rich Markdown description containing:
@@ -81,16 +56,20 @@ Every task in Vibe Kanban will have a rich Markdown description containing:
 *   **Dispatch Evaluation Alerts:** Critical feedback from the evaluation phase (e.g., "Too risky for Junior Developer").
 
 ### Avoid Duplicates
-The script checks for existing tasks by title within the specified project. If a task with the same name already exists in the "ScrumAI Project", it will be skipped to prevent clutter.
+The script checks for existing tasks by title within the specified project. If a task with the same name already exists, it will be skipped to prevent duplicates.
 
-### Repository Linking (Visibility - SQLite Mode Only)
-To ensure the project is visible in the Vibe Kanban dashboard, the adapter registers the current directory (`ScrumAI`) as a Repository (`repos` table) and joins it to the Kanban project (`project_repos` table). Without this link, the project will exist in the database but remain hidden in the UI.
+## 4. Troubleshooting
 
-**Note:** In MCP mode, the project must already exist in Vibe Kanban. Project creation via MCP is not yet supported.
+*   **"No organizations found":** Make sure you are signed in to Vibe Kanban in the browser.
+*   **"Project not found":** Make sure the project exists in Vibe Kanban. You need to create it in the UI first (MCP mode cannot create projects yet).
+*   **Tasks not showing up:** Refresh the Vibe Kanban UI.
 
-## 6. Troubleshooting
+## 5. Command Summary
 
-*   **"Database not found" (SQLite mode):** Ensure Vibe Kanban has been launched at least once. Use the `--db` flag to point to the correct file if yours is non-standard.
-*   **Tasks not showing up:** Refresh the Vibe Kanban UI (typically in your browser at `http://localhost:3000`).
-*   **Syntax Error:** Ensure you are using Python 3.10+ (recommended: run via `uv run python`).
-*   **MCP mode fails:** Ensure Vibe Kanban is running and you have created a workspace/project in the UI. If MCP fails, it will automatically fall back to SQLite mode (unless `--no-fallback` is specified).
+```bash
+# Full workflow
+uv run python main.py decompose -t "Your goal"
+uv run python main.py dispatch
+uv run python main.py evaluate-dispatch
+uv run python main.py export-kanban --project-name "Your Project"
+```
