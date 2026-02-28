@@ -1,11 +1,13 @@
 """Role dispatch models for task-to-role assignment.
 
 Two-step decision framework:
-  Step 1 (Delegation scoring): 3-dimension scoring → autonomy_level + owner_type
+  Step 1 (Delegation scoring): 4-dimension scoring → autonomy_level + owner_type
   Step 2 (Role classification): task content → recommended_role
 
 Based on:
-  - AI Task Delegability Framework (Lubars & Tan, NeurIPS 2019)
+  - AI Task Delegability Framework (Lubars & Tan, NeurIPS 2019) — all 4
+    scoring dimensions adapted from the paper's factors (Difficulty, Risk,
+    Trust, and Motivation reframed as Domain Specificity for agent routing)
   - TaskAllocator dataset (Shafiq et al., JKU 2021) for few-shot calibration
 
 AI roles are domain-based (not seniority-based) because what matters for agent
@@ -25,13 +27,12 @@ ALL_ROLES = AI_ROLES + HUMAN_ROLES
 
 
 class RoleFitScoring(BaseModel):
-    """4-dimension delegation scoring from Lubars & Tan (2019).
+    """4-dimension delegation scoring adapted from Lubars & Tan (2019).
 
-    All 4 dimensions map 1:1 to the paper's factors:
-      - complexity       ← Difficulty (expertise, effort, creativity)
-      - risk             ← Risk (accountability, uncertainty, impact)
-      - human_judgment   ← Trust (machine ability, interpretability, value alignment)
-      - domain_specificity ← Motivation (reframed: which agent role best fits this task)
+      - complexity       ← paper's Difficulty (expertise, effort, creativity)
+      - risk             ← paper's Risk (accountability, uncertainty, impact)
+      - human_judgment   ← paper's Trust (machine ability, interpretability, value alignment)
+      - domain_specificity ← paper's Motivation (reframed: human desire/fit → agent specialization/fit)
     """
 
     complexity: DimensionScore = Field(

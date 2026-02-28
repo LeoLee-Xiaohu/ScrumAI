@@ -2,7 +2,7 @@
 
 Reads decomposed tasks and assigns roles + autonomy levels using a two-step
 LLM evaluation framework:
-  Step 1: 5-dimension delegation scoring → autonomy_level + owner_type
+  Step 1: 4-dimension delegation scoring → autonomy_level + owner_type
   Step 2: Role classification → recommended_role
 
 Usage:

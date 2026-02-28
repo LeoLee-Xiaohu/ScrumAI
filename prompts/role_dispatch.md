@@ -6,24 +6,24 @@ For each task provided, make **two independent decisions**:
 
 ### Step 1: Delegation Scoring (determines autonomy)
 
-Score the task on 4 dimensions (0-2 each, max 8 total). All 4 dimensions are from the AI Task Delegability Framework (Lubars & Tan, NeurIPS 2019):
+Score the task on 4 dimensions (0-2 each, max 8 total). All 4 dimensions are adapted from the AI Task Delegability Framework (Lubars & Tan, NeurIPS 2019).
 
-1. **Complexity** (paper's "Difficulty" factor — expertise, effort, creativity):
+1. **Complexity** (adapted from paper's "Difficulty" factor — expertise, effort, creativity):
    - 0: Routine/boilerplate — straightforward implementation, well-known patterns
    - 1: Moderate — requires domain knowledge, design decisions, or multi-component coordination
    - 2: Architectural/novel — high expertise needed, creative problem-solving, system-wide impact
 
-2. **Risk** (paper's "Risk" factor — accountability, uncertainty, impact):
+2. **Risk** (adapted from paper's "Risk" factor — accountability, uncertainty, impact):
    - 0: Low impact, easily reversible — e.g., UI text changes, adding simple fields
    - 1: Moderate impact — e.g., API contract changes, data model updates
    - 2: High impact, hard to reverse — e.g., security vulnerabilities, data loss, breaking changes
 
-3. **Human Judgment** (paper's "Trust" factor — machine ability, interpretability, value alignment):
+3. **Human Judgment** (adapted from paper's "Trust" factor — machine ability, interpretability, value alignment):
    - 0: High trust in AI — purely mechanical, no ambiguity
    - 1: Moderate — AI can handle but needs human review at checkpoints
    - 2: Low trust — requires continuous human judgment, business decisions, or subjective evaluation
 
-4. **Domain Specificity** (paper's "Motivation" factor — reframed as domain expertise depth for agent routing):
+4. **Domain Specificity** (adapted from paper's "Motivation" factor — reframed for AI agent routing: the paper measures human desire/fit for a task; we measure which specialist agent best fits the task):
    - 0: Generic — standard patterns any developer can handle (e.g., basic CRUD, simple forms)
    - 1: Domain-specific — requires knowledge of a particular domain's frameworks, conventions, or best practices (e.g., React state management, database indexing strategies)
    - 2: Deep expertise — requires specialized knowledge across the domain (e.g., real-time sync architecture, OAuth2/OIDC flows, Kubernetes orchestration)
@@ -45,73 +45,75 @@ Based on the task content, assign one of these 6 roles. AI roles are **domain-ba
 **Human roles** (when owner_type = human):
 - `Product Owner` — business decisions, priority calls, goal-setting, requirement clarification
 - `Scrum Master` — process management, sprint planning, team coordination, blocker resolution
-- `Reviewer` — code review, quality gates, technical approval, design review, security audit
+- `Reviewer` — quality gates, technical approval, design review, security audit, QA oversight
 
 **Cross-cutting tasks:** Some tasks span frontend and backend (e.g., "real-time sync with WebSocket"). Assign to the domain where the **primary complexity** lives. If truly 50/50, prefer `Backend Developer` since integration logic usually resides server-side.
 
 ## Few-Shot Examples for Role Classification
 
-These real-world examples are from the TaskAllocator Taiga.io dataset (Shafiq et al., 2021), mapped to our 6-role system.
+These examples are real tasks from the TaskAllocator Taiga.io dataset (Shafiq et al., 2021), mapped to our 6-role system. Dataset role labels are shown in parentheses where they differ from ours.
 
 **Example 1** → **Frontend Developer**
+- Source: 125501.csv (Websites Durable Team) — dataset role: `Front End Developer`
 - Title: "Decouple 'other' links from download button & update link copy"
 - Description: "Update download button links and copy text per design spec."
-- Scoring: C=0, R=0, H=0, D=0 → Total 0 → autonomous
 - Why: Simple UI update with clear specification — generic patterns, purely client-side.
 
 **Example 2** → **Frontend Developer**
+- Source: 125501.csv (Websites Durable Team) — dataset role: `Front End Developer`
 - Title: "Code - Create animated version of /new forest download page design"
 - Description: "Implement animated page design per provided mockup and PR reference."
-- Scoring: C=1, R=0, H=0, D=1 → Total 2 → autonomous
 - Why: Frontend animation work requiring CSS/JS domain knowledge, but routine implementation.
 
 **Example 3** → **Backend Developer**
-- Title: "Sprinklers data – provide detail"
-- Description: "Provide detail of the Sprinklers data available. Include % of properties matched and the actual data."
-- Scoring: C=1, R=1, H=1, D=1 → Total 4 → supervised
-- Why: Data analysis and API work requiring backend domain knowledge with moderate risk.
+- Source: 52931.csv (Distll) — dataset role: `Backend Developer`
+- Title: "Add the ability to upload multiple medias for sources"
+- Description: "Sources should be able to hold a set of up to 5 pictures each. There will be an interface on the AdminUI for this upload, that will allow Distll to add images of at least a size and resolution and in a given series of formats."
+- Why: File upload with validation logic — backend API and storage domain, moderate complexity.
 
 **Example 4** → **Backend Developer**
-- Title: "Trigger: stage.update_incident_fact_trigger"
-- Description: "Create the trigger and trigger function on the Vision 4 synced table in the staging schema."
-- Scoring: C=1, R=1, H=1, D=2 → Total 5 → supervised
-- Why: Database trigger with cross-system sync — deep backend domain expertise needed.
+- Source: 52931.csv (Distll) — dataset role: `Backend Developer`
+- Title: "Create PreProduction environment"
+- Description: "Setup servers, setup the deployment pipeline, setup autoscaling."
+- Why: Environment setup spanning backend and infrastructure — moderate risk due to pipeline config.
 
 **Example 5** → **Infrastructure Engineer**
+- Source: 289231.csv (TripleO CI production) — dataset role: `Team Catalyst`
 - Title: "Bootstrap an upstream job"
-- Description: "Run an upstream job by parenting a job from tripleo-ci. Configure dependencies and validate CI pipeline."
-- Scoring: C=1, R=1, H=0, D=1 → Total 3 → supervised
-- Why: CI/CD pipeline setup requiring infra domain knowledge.
+- Description: "Run an upstream job by parenting a job from tripleo-ci. Dependencies: Override base job in config."
+- Why: CI/CD pipeline setup requiring infrastructure domain knowledge.
 
 **Example 6** → **Infrastructure Engineer**
+- Source: 289231.csv (TripleO CI production) — dataset role: `Team Catalyst`
 - Title: "Configure base job"
-- Description: "Configure and validate base job in the config repo. Set up software factory docs build and CI integration."
-- Scoring: C=1, R=1, H=0, D=1 → Total 3 → supervised
+- Description: "Configure and validate base job in the config repo. Validate via software factory docs build."
 - Why: Build system and CI integration — infrastructure automation.
 
 **Example 7** → **Product Owner**
+- Source: 93128.csv (UXBOX) — dataset role: `Product Owner`
 - Title: "[Layout]: Loaders & transitions"
 - Description: "Design the full page loader for transitions between dashboard and projects."
-- Scoring: C=1, R=1, H=2, D=2 → Total 6 → manual
 - Why: UX/design decision requiring product vision — subjective evaluation and deep UX expertise.
 
 **Example 8** → **Product Owner**
+- Source: 93128.csv (UXBOX) — dataset role: `Product Owner`
 - Title: "[Front] Shape stroke definition"
-- Description: "Define 5 preset options for stroke style: None, Solid, Dotted, Dashed, and custom."
-- Scoring: C=1, R=1, H=2, D=2 → Total 6 → manual
+- Description: "Define 5 preset options for stroke style: None, Solid, Dotted, Dashed, and Mixed."
 - Why: Product specification task — defining feature presets requires business judgment and deep domain knowledge.
 
-**Example 9** → **Scrum Master**
-- Title: "Coordinate sprint handoff between frontend and backend teams"
-- Description: "Align deployment schedules and manage inter-team dependencies for the upcoming release."
-- Scoring: C=1, R=1, H=2, D=2 → Total 6 → manual
-- Why: Cross-team coordination and process management requiring continuous human judgment.
+**Example 9** → **Reviewer** (QA oversight)
+- Source: 289231.csv (TripleO CI production) — dataset role: `User Advocate`
+- Title: "[os_tempest] openstack-ansible-os_tempest dependences must be self-contained"
+- Description: "There are some dependences from other roles in os_tempest. We need to have all these dependences removed. os_tempest must be self-contained, not requiring dependences from other repos."
+- Why: Quality gate task — ensuring test framework independence, high risk if dependencies break downstream.
 
-**Example 10** → **Reviewer**
-- Title: "Enable rpm install support in os_tempest role"
-- Description: "Add support for installing tempest from RPM packages for TripleO integration."
-- Scoring: C=2, R=2, H=2, D=2 → Total 8 → manual
-- Why: Integration change with high risk — needs deep technical review for compatibility and downstream impact.
+**Example 10** → **Reviewer** (technical approval)
+- Source: 66937.csv (OpenSwitch) — dataset role: `Stakeholder`
+- Title: "Enhancing password encryption for vtysh"
+- Description: "vtysh is using a weak password encryption (DES) algorithm. Use a better more secured encryption algorithm."
+- Why: Security-critical change requiring expert review — encryption algorithm choice needs human judgment and audit.
+
+**Note:** Scrum Master has no few-shot example because the dataset does not contain process-management tasks. The LLM should assign Scrum Master based on the role description above when tasks involve coordination, sprint planning, or blocker resolution.
 
 ## Input
 
