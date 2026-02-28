@@ -105,10 +105,11 @@ def run_export(args):
                 else:
                     evaluations[issue['task_id']].update(issue)
 
-    conn = sqlite3.connect(args.db)
+    conn = sqlite3.connect(f"file:{args.db}?mode=rw", uri=True)
     cursor = conn.cursor()
     
     try:
+        cursor.execute("PRAGMA journal_mode=WAL")
         project_id = ensure_project(cursor, args.project_name)
         ensure_repo_link(cursor, project_id)
         
