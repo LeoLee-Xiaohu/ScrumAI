@@ -67,6 +67,9 @@ Every task in Vibe Kanban will have a rich Markdown description containing:
 ### Avoid Duplicates
 The script checks for existing tasks by title within the specified project. If a task with the same name already exists in the "ScrumAI Project", it will be skipped to prevent clutter.
 
+### Repository Linking (Visibility)
+To ensure the project is visible in the Vibe Kanban dashboard, the adapter registers the current directory (`ScrumAI`) as a Repository (`repos` table) and joins it to the Kanban project (`project_repos` table). Without this link, the project will exist in the database but remain hidden in the UI.
+
 ## 6. Troubleshooting
 
 *   **"Database not found":** Ensure Vibe Kanban has been launched at least once. Use the `--db` flag to point to the correct file if yours is non-standard.

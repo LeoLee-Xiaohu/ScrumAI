@@ -28,18 +28,47 @@ def parse_args():
     return parser.parse_args()
 
 def ensure_project(cursor, project_name):
+    # Get project if it exists
     cursor.execute("SELECT id FROM projects WHERE name = ?", (project_name,))
-    row = cursor.fetchone()
-    if row:
-        return row[0]
-    
-    project_id = uuid.uuid4().bytes
-    now = datetime.utcnow().isoformat()
-    cursor.execute(
-        "INSERT INTO projects (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)",
-        (project_id, project_name, now, now)
-    )
+    project_row = cursor.fetchone()
+    if project_row:
+        project_id = project_row[0]
+    else:
+        project_id = uuid.uuid4().bytes
+        now = datetime.utcnow().isoformat()
+        cursor.execute(
+            "INSERT INTO projects (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)",
+            (project_id, project_name, now, now)
+        )
+        
     return project_id
+
+def ensure_repo_link(cursor, project_id):
+    # 1. Ensure the repo exists in the 'repos' table based on current working directory
+    current_path = os.path.abspath(os.getcwd())
+    repo_name = os.path.basename(current_path)
+    
+    cursor.execute("SELECT id FROM repos WHERE path = ?", (current_path,))
+    repo_row = cursor.fetchone()
+    
+    if repo_row:
+        repo_id = repo_row[0]
+    else:
+        repo_id = uuid.uuid4().bytes
+        now = datetime.utcnow().isoformat()
+        cursor.execute(
+            "INSERT INTO repos (id, path, name, display_name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (repo_id, current_path, repo_name, repo_name, now, now)
+        )
+        
+    # 2. Link the repository to the project
+    cursor.execute("SELECT id FROM project_repos WHERE project_id = ? AND repo_id = ?", (project_id, repo_id))
+    if not cursor.fetchone():
+        link_id = uuid.uuid4().bytes
+        cursor.execute(
+            "INSERT INTO project_repos (id, project_id, repo_id) VALUES (?, ?, ?)",
+            (link_id, project_id, repo_id)
+        )
 
 def format_description(task, evaluation=None):
     desc = f"**Role:** {task.get('role', 'Unassigned')}\n"
@@ -81,6 +110,7 @@ def run_export(args):
     
     try:
         project_id = ensure_project(cursor, args.project_name)
+        ensure_repo_link(cursor, project_id)
         
         tasks_inserted = 0
         now = datetime.utcnow().isoformat()

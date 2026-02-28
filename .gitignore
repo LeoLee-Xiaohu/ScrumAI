@@ -43,5 +43,9 @@ score_result.json
 brainstorm_result.json
 dispatch_evaluation.json
 
+# Local Tools & Dependencies
+node_modules/
+vibe-kanban-tmp/
+
 # Vibe coding context
 cursor_knowledge/
