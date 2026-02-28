@@ -100,6 +100,19 @@ def cmd_dispatch(args: argparse.Namespace) -> None:
     run_dispatch(client, input_file=args.file, output_file=args.output)
 
 
+def cmd_evaluate_dispatch(args: argparse.Namespace) -> None:
+    """Run the dispatch evaluation command."""
+    from runners.dispatch_evaluation import run_evaluation
+
+    client = get_client(args.provider)
+    run_evaluation(
+        client,
+        decomposed_file=args.decomposed,
+        dispatched_file=args.dispatched,
+        output_file=args.output,
+    )
+
+
 def cmd_list_prompts(_args: argparse.Namespace) -> None:
     """List all available prompts."""
     prompts_dir = Path(__file__).parent / "prompts"
@@ -125,6 +138,7 @@ Examples:
   python main.py decompose -t "Build a REST API"  Decompose a goal
   python main.py dispatch                          Dispatch roles for tasks
   python main.py dispatch -f decomposed_task.json  Dispatch with explicit input
+  python main.py evaluate-dispatch             Evaluate dispatch accuracy
   python main.py prompts                       List available prompts
         """,
     )
@@ -177,6 +191,24 @@ Examples:
         help="Output JSON file (default: dispatched_task.json)",
     )
     p_dispatch.set_defaults(func=cmd_dispatch)
+
+    # evaluate-dispatch
+    p_evaluate = subparsers.add_parser(
+        "evaluate-dispatch", help="Evaluate dispatch results for accuracy"
+    )
+    p_evaluate.add_argument(
+        "-i", "--decomposed", default="decomposed_task.json",
+        help="Input JSON file with original decomposed tasks (default: decomposed_task.json)",
+    )
+    p_evaluate.add_argument(
+        "-d", "--dispatched", default="dispatched_task.json",
+        help="Input JSON file with dispatch results (default: dispatched_task.json)",
+    )
+    p_evaluate.add_argument(
+        "-o", "--output", default="dispatch_evaluation.json",
+        help="Output JSON file (default: dispatch_evaluation.json)",
+    )
+    p_evaluate.set_defaults(func=cmd_evaluate_dispatch)
 
     # prompts
     p_prompts = subparsers.add_parser("prompts", help="List available prompts")
