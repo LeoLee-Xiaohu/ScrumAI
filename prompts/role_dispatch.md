@@ -6,7 +6,7 @@ For each task provided, make **two independent decisions**:
 
 ### Step 1: Delegation Scoring (determines autonomy)
 
-Score the task on 4 dimensions (0-2 each, max 8 total). All 4 dimensions are adapted from the AI Task Delegability Framework (Lubars & Tan, NeurIPS 2019). See `docs/` for the full paper PDF.
+Score the task on 4 dimensions (0-2 each, max 8 total). All 4 dimensions are from the AI Task Delegability Framework (Lubars & Tan, NeurIPS 2019):
 
 1. **Complexity** (adapted from paper's "Difficulty" factor — expertise, effort, creativity):
    - 0: Routine/boilerplate — straightforward implementation, well-known patterns
@@ -45,13 +45,13 @@ Based on the task content, assign one of these 6 roles. AI roles are **domain-ba
 **Human roles** (when owner_type = human):
 - `Product Owner` — business decisions, priority calls, goal-setting, requirement clarification
 - `Scrum Master` — process management, sprint planning, team coordination, blocker resolution
-- `Reviewer` — quality gates, technical approval, design review, security audit
+- `Reviewer` — code review, quality gates, technical approval, design review, security audit
 
 **Cross-cutting tasks:** Some tasks span frontend and backend (e.g., "real-time sync with WebSocket"). Assign to the domain where the **primary complexity** lives. If truly 50/50, prefer `Backend Developer` since integration logic usually resides server-side.
 
 ## Few-Shot Examples for Role Classification
 
-These examples are real tasks from the TaskAllocator Taiga.io dataset (Shafiq et al., 2021), mapped to our 6-role system. Dataset role labels are shown in parentheses where they differ from ours. Full dataset CSVs are in `develop-eggs/` and the paper PDF is in `docs/`.
+These real-world examples are from the TaskAllocator Taiga.io dataset (Shafiq et al., 2021), mapped to our 6-role system.
 
 **Example 1** → **Frontend Developer**
 - Source: 125501.csv (Websites Durable Team) — dataset role: `Front End Developer`
@@ -77,14 +77,12 @@ These examples are real tasks from the TaskAllocator Taiga.io dataset (Shafiq et
 - Description: "Setup servers, setup the deployment pipeline, setup autoscaling."
 - Why: Environment setup spanning backend and infrastructure — moderate risk due to pipeline config.
 
-**Example 5** → **DevOps**
-- Source: 289231.csv (TripleO CI production) — dataset role: `Team Catalyst`
+**Example 5** → **Infrastructure Engineer**
 - Title: "Bootstrap an upstream job"
 - Description: "Run an upstream job by parenting a job from tripleo-ci. Dependencies: Override base job in config."
 - Why: CI/CD pipeline setup requiring infrastructure domain knowledge.
 
-**Example 6** → **DevOps**
-- Source: 289231.csv (TripleO CI production) — dataset role: `Team Catalyst`
+**Example 6** → **Infrastructure Engineer**
 - Title: "Configure base job"
 - Description: "Configure and validate base job in the config repo. Validate via software factory docs build."
 - Why: Build system and CI integration — infrastructure automation.
@@ -101,11 +99,11 @@ These examples are real tasks from the TaskAllocator Taiga.io dataset (Shafiq et
 - Description: "Define 5 preset options for stroke style: None, Solid, Dotted, Dashed, and Mixed."
 - Why: Product specification task — defining feature presets requires business judgment and deep domain knowledge.
 
-**Example 9** → **Reviewer** (technical review)
-- Source: 289231.csv (TripleO CI production) — dataset role: `User Advocate`
-- Title: "[os_tempest] openstack-ansible-os_tempest dependences must be self-contained"
-- Description: "There are some dependences from other roles in os_tempest. We need to have all these dependences removed. os_tempest must be self-contained, not requiring dependences from other repos."
-- Why: Quality gate task — ensuring test framework independence, high risk if dependencies break downstream.
+**Example 9** → **Scrum Master**
+- Title: "Coordinate sprint handoff between frontend and backend teams"
+- Description: "Align deployment schedules and manage inter-team dependencies for the upcoming release."
+- Scoring: C=1, R=1, H=2, D=2 → Total 6 → manual
+- Why: Cross-team coordination and process management requiring continuous human judgment.
 
 **Example 10** → **Reviewer** (technical approval)
 - Source: 66937.csv (OpenSwitch) — dataset role: `Stakeholder`
