@@ -1,6 +1,14 @@
-# ScrumAI
+# ScrumAI Prompt Playground
 
-AI-powered Scrum Master and Product Owner assistant that decomposes high-level goals into executable sub-tasks, more project details on PRD.md.
+A CLI tool for debugging and testing AI prompts used by the ScrumAI Forge Jira plugin (`scrumai-forge`). Allows prompt engineers to iterate on prompts locally without deploying to Jira.
+
+## Features
+
+- **Brainstorm** — 4-phase Socratic dialogue for exploring ideas (from `brainstorm-prompts.ts`)
+- **Issue Scoring** — 5-dimension readiness scoring (from `issue-scorer.ts`)
+- **Task Decomposition** — Goal → sub-task tree decomposition
+- **Role Dispatch** — AI/Human role assignment using 3-dimension delegation scoring
+- **Dispatch Evaluation** — Evaluate accuracy of role assignments
 
 ## Prerequisites
 
@@ -23,7 +31,9 @@ AI-powered Scrum Master and Product Owner assistant that decomposes high-level g
 
 ## Configuration
 
-This project uses Google's Gemini models. You need an API key to run it.
+This project supports OpenAI-compatible APIs and Google Gemini.
+
+### Option 1: Google Gemini (Recommended)
 
 1.  **Get a Google Gemini API Key:**
     - Visit [Google AI Studio](https://aistudio.google.com/).
@@ -41,32 +51,110 @@ This project uses Google's Gemini models. You need an API key to run it.
       GEMINI_API_KEY=your_actual_api_key_here
       GEMINI_MODEL=gemini-2.5-flash
       ```
-    - You can also change the `GEMINI_MODEL` if you want to use a different model version.
+
+### Option 2: OpenAI-Compatible API
+
+Configure your `.env` file:
+```ini
+OPENAI_API_KEY=your_api_key
+OPENAI_BASE_URL=https://api.openai.com/v1  # optional, for custom endpoints
+OPENAI_MODEL=gpt-4o
+```
 
 ## Usage
 
-Run the main script using `uv run` to ensure it uses the correct virtual environment.
+Run commands using `uv run` to ensure it uses the correct virtual environment.
 
-### Decompose a Task
-You can provide a task description directly via the command line:
-
-```bash
-uv run python main.py -t "Develop a user registration flow using React and Firebase"
-```
-
-### Decompose from a File
-Alternatively, you can provide a markdown file containing the goal:
+### Interactive Brainstorm
 
 ```bash
-uv run python main.py -f goal.md
+uv run python main.py brainstorm
+uv run python main.py brainstorm -f ticket.md  # With context
 ```
 
-### Output
-The script will generate a JSON file (default: `decomposed_task.json`) containing the broken-down stories and tasks.
+### Score Issue Readiness
+
+```bash
+uv run python main.py score -f ticket.md
+uv run python main.py score -t "Build a login page with auth"
+```
+
+### Decompose a Goal into Tasks
+
+```bash
+uv run python main.py decompose -t "Build a REST API for item management"
+uv run python main.py decompose -f goal.md
+uv run python main.py decompose -f goal.md -o my_tasks.json
+```
+
+### Dispatch Roles for Tasks
+
+Reads `decomposed_task.json` and assigns roles with autonomy levels:
+
+```bash
+uv run python main.py dispatch
+uv run python main.py dispatch -f my_tasks.json -o my_dispatch.json
+```
+
+### Evaluate Dispatch Accuracy
+
+Compares AI-generated role assignments to original human assignments:
+
+```bash
+uv run python main.py evaluate-dispatch
+uv run python main.py evaluate-dispatch -i decomposed_task.json -d dispatched_task.json
+uv run python main.py evaluate-dispatch -o my_evaluation.json
+```
+
+### List Available Prompts
+
+```bash
+uv run python main.py prompts
+```
+
+## Output Files
+
+- `decomposed_task.json` — Task decomposition results
+- `dispatched_task.json` — Role dispatch results
+- `dispatch_evaluation.json` — Evaluation of dispatch accuracy
+
+## Architecture
+
+```
+scrumai-prompts/
+├── prompts/              # Prompt templates (one .md file per prompt type)
+│   ├── brainstorm.md
+│   ├── issue_scoring.md
+│   ├── task_decomposition.md
+│   ├── role_dispatch.md
+│   └── dispatch_evaluation.md
+├── models/               # Pydantic models matching scrumai-forge TypeScript types
+│   ├── brainstorm.py
+│   ├── scoring.py
+│   ├── task.py
+│   ├── role.py
+│   └── dispatch_evaluation.py
+├── runners/              # CLI runners for each prompt type
+│   ├── brainstorm.py
+│   ├── scoring.py
+│   ├── task.py
+│   ├── dispatch.py
+│   └── dispatch_evaluation.py
+├── client.py             # LLM client (OpenAI-compatible + Google Genai)
+└── main.py              # CLI entry point
+```
+
+## Type Mapping
+
+Pydantic models mirror TypeScript types from `scrumai-forge`:
+- `models/brainstorm.py` ↔ `src/types/brainstorm.ts` + `src/lib/brainstorm-prompts.ts`
+- `models/scoring.py` ↔ `src/lib/issue-scorer.ts`
+- `models/role.py` ↔ Role dispatch framework (Lubars & Tan, 2019)
 
 ## Help
+
 To see all available options:
 ```bash
 uv run python main.py --help
+uv run python main.py <command> --help
 ```
-# ScrumAI
