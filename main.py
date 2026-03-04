@@ -10,22 +10,25 @@ Prompt sources from scrumai-forge:
 
 Usage:
     # Interactive brainstorm session
-    python main.py brainstorm
+    uv run main.py brainstorm
 
     # Brainstorm with ticket context from file
-    python main.py brainstorm -f ticket.md
+    uv run main.py brainstorm -f ticket.md
 
     # Score an issue for AI-readiness
-    python main.py score -f ticket.md
-    python main.py score -t "Build a login page with email/password auth"
+    uv run main.py score -f ticket.md
+    uv run main.py score -t "Build a login page with email/password auth"
 
     # Decompose a goal into sub-tasks
-    python main.py decompose -f goal.md
-    python main.py decompose -t "Implement user authentication system"
+    uv run main.py decompose -f goal.md
+    uv run main.py decompose -t "Implement user authentication system"
 
     # Specify LLM provider
-    python main.py --provider openai brainstorm
-    python main.py --provider gemini decompose -f goal.md
+    uv run main.py --provider openai brainstorm
+    uv run main.py --provider gemini decompose -f goal.md
+
+    # Integration with Vibe Kanban
+    uv run main.py export-kanban --project-name "Your Project Name"
 """
 
 import argparse
@@ -141,15 +144,15 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python main.py brainstorm                    Interactive brainstorm
-  python main.py brainstorm -f ticket.md       Brainstorm with ticket context
-  python main.py score -f ticket.md            Score issue readiness
-  python main.py decompose -t "Build a REST API"  Decompose a goal
-  python main.py dispatch                          Dispatch roles for tasks
-  python main.py dispatch -f decomposed_task.json  Dispatch with explicit input
-  python main.py evaluate-dispatch             Evaluate dispatch accuracy
-  python main.py export-kanban                 Export tasks to Vibe Kanban
-  python main.py prompts                       List available prompts
+  uv run main.py brainstorm                    Interactive brainstorm
+  uv run main.py brainstorm -f ticket.md       Brainstorm with ticket context
+  uv run main.py score -f ticket.md            Score issue readiness
+  uv run main.py decompose -t "Build a REST API"  Decompose a goal
+  uv run main.py dispatch                          Dispatch roles for tasks
+  uv run main.py dispatch -f decomposed_task.json  Dispatch with explicit input
+  uv run main.py evaluate-dispatch             Evaluate dispatch accuracy
+  uv run main.py export-kanban                 Export tasks to Vibe Kanban
+  uv run main.py prompts                       List available prompts
         """,
     )
     parser.add_argument(
