@@ -141,6 +141,7 @@ scrumai-prompts/
 │   ├── dispatch.py
 │   └── dispatch_evaluation.py
 ├── client.py             # LLM client (OpenAI-compatible + Google Genai)
+├── mcp_adapter.py        # Vibe Kanban MCP Client
 └── main.py              # CLI entry point
 ```
 

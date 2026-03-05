@@ -64,6 +64,10 @@ The script checks for existing tasks by title within the specified project. If a
 *   **"Project not found":** Make sure the project exists in Vibe Kanban. You need to create it in the UI first (MCP mode cannot create projects yet).
 *   **Tasks not showing up:** Refresh the Vibe Kanban UI.
 
+---
+
+**For more technical details on how the integration works, see the [MCP Adapter Documentation](mcp_adapter.md).**
+
 ## 5. Command Summary
 
 ```bash
