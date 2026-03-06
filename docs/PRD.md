@@ -74,7 +74,7 @@ A unit of work with:
 - **Agent** = a runnable worker that performs a role using prompts + tools + skills.
 - **Skill** = a reusable capability or knowledge module that agents can invoke (e.g., "code review", "test generation", "API design").
 - One role may be backed by **multiple agents**, and one agent may implement multiple roles in early stages.
-- Current roles: 3 domain-based AI roles (`Frontend Developer`, `Backend Developer`, `Infrastructure Engineer`) + 3 human roles (`Product Owner`, `Scrum Master`, `Reviewer`).
+- Current roles: 3 domain-based AI roles (`Frontend Developer`, `Backend Developer`, `DevOps`) + 3 human roles (`Product Owner`, `Scrum Master`, `Reviewer`).
 
 ### 6.3 Blocker
 A task state requiring human decision/approval before progress continues (e.g., choosing between design options, approving UI draft).
@@ -191,7 +191,7 @@ Two-step evaluation framework per task:
 - `title`
 - `description`
 - `status` (enum)
-- `role` (string: "Frontend Developer", "Backend Developer", "Infrastructure Engineer", "Product Owner", "Scrum Master", "Reviewer")
+- `role` (string: "Frontend Developer", "Backend Developer", "DevOps", "Product Owner", "Scrum Master", "Reviewer")
 - `owner_type` ("human" | "ai")
 - `assignee` (person_id or agent_id)
 - `estimate_hours` (float, optional)
@@ -212,12 +212,12 @@ Two-step evaluation framework per task:
 #### AI Roles (domain-based)
 - `Frontend Developer` — UI components, styling, client-side logic, React/Vue/Angular, responsive design. Each agent carries a domain-specific system prompt with relevant frameworks.
 - `Backend Developer` — API design, server-side logic, database operations, authentication, data processing.
-- `Infrastructure Engineer` — CI/CD pipelines, deployment, monitoring, logging, Docker, cloud configuration.
+- `DevOps` — CI/CD pipelines, deployment, monitoring, logging, Docker, cloud configuration.
 
 #### Human Roles
 - `Product Owner` — Business decisions, priority calls, goal-setting, requirement clarification. Autonomy: manual.
 - `Scrum Master` — Process management, sprint planning, team coordination, blocker resolution. Autonomy: manual.
-- `Reviewer` — Quality gates, technical approval, design review, security audit, QA oversight. Autonomy: manual.
+- `Reviewer` — Quality gates, technical approval, design review, security audit. Autonomy: manual.
 
 #### Autonomy Levels (assigned by dispatch, 4-dimension scoring, max 8)
 - `autonomous` — Fully automated AI execution, no human oversight needed (total delegation score 0-2)

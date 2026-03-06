@@ -6,7 +6,7 @@ For each task provided, make **two independent decisions**:
 
 ### Step 1: Delegation Scoring (determines autonomy)
 
-Score the task on 4 dimensions (0-2 each, max 8 total). All 4 dimensions are adapted from the AI Task Delegability Framework (Lubars & Tan, NeurIPS 2019).
+Score the task on 4 dimensions (0-2 each, max 8 total). All 4 dimensions are adapted from the AI Task Delegability Framework (Lubars & Tan, NeurIPS 2019). See `docs/` for the full paper PDF.
 
 1. **Complexity** (adapted from paper's "Difficulty" factor — expertise, effort, creativity):
    - 0: Routine/boilerplate — straightforward implementation, well-known patterns
@@ -26,7 +26,7 @@ Score the task on 4 dimensions (0-2 each, max 8 total). All 4 dimensions are ada
 4. **Domain Specificity** (adapted from paper's "Motivation" factor — reframed for AI agent routing: the paper measures human desire/fit for a task; we measure which specialist agent best fits the task):
    - 0: Generic — standard patterns any developer can handle (e.g., basic CRUD, simple forms)
    - 1: Domain-specific — requires knowledge of a particular domain's frameworks, conventions, or best practices (e.g., React state management, database indexing strategies)
-   - 2: Deep expertise — requires specialized knowledge across the domain (e.g., real-time sync architecture, OAuth2/OIDC flows, Kubernetes orchestration)
+   - 2: Deep expertise — requires specialized knowledge across the domain (e.g., real-time sync architecture, OAuth2/OIDC flows)
 
 **Autonomy mapping from total score (max 8):**
 - Total 0-2 → `autonomous` + `owner_type: ai`
@@ -40,18 +40,18 @@ Based on the task content, assign one of these 6 roles. AI roles are **domain-ba
 **AI roles** (when owner_type = ai):
 - `Frontend Developer` — UI components, styling, client-side logic, React/Vue/Angular, CSS, responsive design, browser APIs
 - `Backend Developer` — API design, server-side logic, database operations, authentication, data processing, ORM
-- `Infrastructure Engineer` — CI/CD pipelines, deployment, monitoring, logging, Docker, cloud config, DevOps
+- `DevOps` — CI/CD pipelines, deployment, monitoring, logging, Docker, cloud config
 
 **Human roles** (when owner_type = human):
 - `Product Owner` — business decisions, priority calls, goal-setting, requirement clarification
 - `Scrum Master` — process management, sprint planning, team coordination, blocker resolution
-- `Reviewer` — quality gates, technical approval, design review, security audit, QA oversight
+- `Reviewer` — quality gates, technical approval, design review, security audit
 
 **Cross-cutting tasks:** Some tasks span frontend and backend (e.g., "real-time sync with WebSocket"). Assign to the domain where the **primary complexity** lives. If truly 50/50, prefer `Backend Developer` since integration logic usually resides server-side.
 
 ## Few-Shot Examples for Role Classification
 
-These examples are real tasks from the TaskAllocator Taiga.io dataset (Shafiq et al., 2021), mapped to our 6-role system. Dataset role labels are shown in parentheses where they differ from ours.
+These examples are real tasks from the TaskAllocator Taiga.io dataset (Shafiq et al., 2021), mapped to our 6-role system. Dataset role labels are shown in parentheses where they differ from ours. Full dataset CSVs are in `develop-eggs/` and the paper PDF is in `docs/`.
 
 **Example 1** → **Frontend Developer**
 - Source: 125501.csv (Websites Durable Team) — dataset role: `Front End Developer`
@@ -77,13 +77,13 @@ These examples are real tasks from the TaskAllocator Taiga.io dataset (Shafiq et
 - Description: "Setup servers, setup the deployment pipeline, setup autoscaling."
 - Why: Environment setup spanning backend and infrastructure — moderate risk due to pipeline config.
 
-**Example 5** → **Infrastructure Engineer**
+**Example 5** → **DevOps**
 - Source: 289231.csv (TripleO CI production) — dataset role: `Team Catalyst`
 - Title: "Bootstrap an upstream job"
 - Description: "Run an upstream job by parenting a job from tripleo-ci. Dependencies: Override base job in config."
 - Why: CI/CD pipeline setup requiring infrastructure domain knowledge.
 
-**Example 6** → **Infrastructure Engineer**
+**Example 6** → **DevOps**
 - Source: 289231.csv (TripleO CI production) — dataset role: `Team Catalyst`
 - Title: "Configure base job"
 - Description: "Configure and validate base job in the config repo. Validate via software factory docs build."
@@ -101,7 +101,7 @@ These examples are real tasks from the TaskAllocator Taiga.io dataset (Shafiq et
 - Description: "Define 5 preset options for stroke style: None, Solid, Dotted, Dashed, and Mixed."
 - Why: Product specification task — defining feature presets requires business judgment and deep domain knowledge.
 
-**Example 9** → **Reviewer** (QA oversight)
+**Example 9** → **Reviewer** (technical review)
 - Source: 289231.csv (TripleO CI production) — dataset role: `User Advocate`
 - Title: "[os_tempest] openstack-ansible-os_tempest dependences must be self-contained"
 - Description: "There are some dependences from other roles in os_tempest. We need to have all these dependences removed. os_tempest must be self-contained, not requiring dependences from other repos."
@@ -139,7 +139,7 @@ Respond in JSON format only:
         "domain_specificity": {{ "score": 1, "reason": "brief explanation" }}
       }},
       "total_score": 3,
-      "recommended_role": "Frontend Developer",
+      "recommended_role": "DevOps",
       "owner_type": "ai",
       "autonomy_level": "supervised",
       "reasoning": "1-2 sentence explanation of role assignment"
@@ -155,7 +155,7 @@ Respond in JSON format only:
 - The total_score MUST equal the sum of all 4 dimension scores
 - Autonomy mapping is strict: 0-2=autonomous, 3-5=supervised, 6-8=manual
 - owner_type follows autonomy: autonomous/supervised=ai, manual=human
-- For AI tasks (owner_type=ai): choose the domain role matching the task's primary technical domain
+- For AI tasks (owner_type=ai): choose the domain role matching the task's primary technical domain (Frontend Developer, Backend Developer, or DevOps)
 - For human tasks (owner_type=human): choose the role that best matches the task's nature (business=Product Owner, process=Scrum Master, technical review=Reviewer)
 - Domain Specificity helps differentiate between generic tasks (any agent) and specialized tasks (needs domain expert with tailored system prompt)
 - When a task spans multiple domains, assign to the domain where the core complexity lives
