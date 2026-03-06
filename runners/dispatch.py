@@ -2,7 +2,7 @@
 
 Reads decomposed tasks and assigns roles + autonomy levels using a two-step
 LLM evaluation framework:
-  Step 1: 3-dimension delegation scoring → autonomy_level + owner_type
+  Step 1: 4-dimension delegation scoring → autonomy_level + owner_type
   Step 2: Role classification → recommended_role
 
 Usage:
@@ -30,10 +30,11 @@ DIM = "\033[2m"
 RESET = "\033[0m"
 
 ROLE_COLORS = {
-    "Junior Developer": GREEN,
-    "Senior Developer": CYAN,
+    "Frontend Developer": GREEN,
+    "Backend Developer": CYAN,
+    "DevOps": YELLOW,
     "Product Owner": MAGENTA,
-    "Scrum Master": YELLOW,
+    "Scrum Master": MAGENTA,
     "Reviewer": RED,
 }
 
@@ -79,6 +80,7 @@ def _display_dispatch(result: DispatchResult) -> None:
             ("C", d.scoring.complexity),
             ("R", d.scoring.risk),
             ("H", d.scoring.human_judgment),
+            ("D", d.scoring.domain_specificity),
         ]:
             s = dim.score
             c = GREEN if s == 0 else (YELLOW if s == 1 else RED)
@@ -86,7 +88,7 @@ def _display_dispatch(result: DispatchResult) -> None:
 
         print(f"\n  {BOLD}{d.task_id}{RESET}: {role_color}{d.recommended_role}{RESET} "
               f"{auto_icon} {d.autonomy_level}")
-        print(f"    Score: [{score_bar}] {d.total_score}/6 "
+        print(f"    Score: [{score_bar}] {d.total_score}/8 "
               f"({d.owner_type})")
         print(f"    {DIM}{d.reasoning}{RESET}")
 
