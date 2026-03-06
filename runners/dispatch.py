@@ -32,7 +32,7 @@ RESET = "\033[0m"
 ROLE_COLORS = {
     "Frontend Developer": GREEN,
     "Backend Developer": CYAN,
-    "Infrastructure Engineer": YELLOW,
+    "DevOps": YELLOW,
     "Product Owner": MAGENTA,
     "Scrum Master": MAGENTA,
     "Reviewer": RED,

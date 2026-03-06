@@ -11,7 +11,7 @@ Based on:
   - TaskAllocator dataset (Shafiq et al., JKU 2021) for few-shot calibration
 
 AI roles are domain-based (not seniority-based) because what matters for agent
-routing is the task domain (frontend/backend/infra), not experience level —
+routing is the task domain (frontend/backend/devops), not experience level —
 each domain agent carries a different system prompt with relevant frameworks.
 """
 
@@ -21,7 +21,7 @@ from typing import Literal
 from models.scoring import DimensionScore
 
 
-AI_ROLES = ["Frontend Developer", "Backend Developer", "Infrastructure Engineer"]
+AI_ROLES = ["Frontend Developer", "Backend Developer", "DevOps"]
 HUMAN_ROLES = ["Product Owner", "Scrum Master", "Reviewer"]
 ALL_ROLES = AI_ROLES + HUMAN_ROLES
 
@@ -56,7 +56,7 @@ class TaskDispatch(BaseModel):
     scoring: RoleFitScoring
     total_score: int = Field(ge=0, le=8, description="Sum of 4 dimension scores")
     recommended_role: str = Field(
-        description="One of: Frontend Developer, Backend Developer, Infrastructure Engineer, Product Owner, Scrum Master, Reviewer"
+        description="One of: Frontend Developer, Backend Developer, DevOps, Product Owner, Scrum Master, Reviewer"
     )
     owner_type: Literal["human", "ai"] = Field(
         description="Derived from total_score: 0-5=ai, 6-8=human"
