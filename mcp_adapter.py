@@ -5,12 +5,16 @@ import queue
 import time
 import logging
 import os
+from collections import deque
 from typing import Optional
 from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
 MCP_SERVER_CMD = ["npx", "-y", "vibe-kanban@latest", "--mcp"]
+MCP_CALL_TIMEOUT_SECONDS = 60
+MCP_STARTUP_TIMEOUT_SECONDS = 120
+MCP_RESPONSE_POLL_INTERVAL_SECONDS = 1
 
 @dataclass
 class McpOrganization:
@@ -66,6 +70,7 @@ class McpClient:
         self.lock = threading.Lock()
         self._tools: list[dict] = []
         self._response_queues: dict[int, queue.Queue] = {}
+        self._stderr_lines: deque[str] = deque(maxlen=100)
         self._initialize_server()
 
     def _initialize_server(self):
@@ -86,23 +91,19 @@ class McpClient:
         except FileNotFoundError:
             raise RuntimeError("npx not found. Please install Node.js and npm.")
 
-        time.sleep(5)
-
         if self.process.poll() is not None:
             stderr = self.process.stderr.read() if self.process.stderr else ""
             raise RuntimeError(f"MCP server failed to start: {stderr}")
 
         self._start_reader()
+        self._start_stderr_reader()
 
         try:
-            self._initialize()
+            self._initialize(timeout_seconds=MCP_STARTUP_TIMEOUT_SECONDS)
         except Exception as e:
-            stderr = ""
-            if self.process.stderr:
-                import select
-                if select.select([self.process.stderr], [], [], 0)[0]:
-                    stderr = self.process.stderr.read()
-            raise RuntimeError(f"MCP initialize failed: {e}. Stderr: {stderr}")
+            raise RuntimeError(
+                f"MCP initialize failed: {e}. Stderr: {self._format_stderr_output()}"
+            )
 
     def _start_reader(self):
         def reader():
@@ -123,8 +124,35 @@ class McpClient:
         thread = threading.Thread(target=reader, daemon=True)
         thread.start()
 
-    def _send_jsonrpc(self, method: str, params: dict = None, expect_response: bool = True) -> dict:
+    def _start_stderr_reader(self):
+        def reader():
+            while self.process and self.process.poll() is None:
+                try:
+                    line = self.process.stderr.readline()
+                    if line:
+                        self._stderr_lines.append(line.rstrip())
+                except Exception:
+                    break
+
+        thread = threading.Thread(target=reader, daemon=True)
+        thread.start()
+
+    def _format_stderr_output(self) -> str:
+        if not self._stderr_lines:
+            return "no stderr output"
+        return "\n".join(self._stderr_lines)
+
+    def _send_jsonrpc(
+        self,
+        method: str,
+        params: dict = None,
+        expect_response: bool = True,
+        timeout_seconds: float = MCP_CALL_TIMEOUT_SECONDS,
+    ) -> dict:
         with self.lock:
+            if not self.process or not self.process.stdin:
+                raise RuntimeError("MCP process is not available.")
+
             self.request_id += 1
             req_id = self.request_id
 
@@ -149,7 +177,25 @@ class McpClient:
                 self.process.stdin.write(request_str)
                 self.process.stdin.flush()
 
-                msg = response_queue.get(timeout=60)
+                deadline = time.monotonic() + timeout_seconds
+                while True:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise TimeoutError(
+                            f"Timed out waiting for MCP response to '{method}' after {timeout_seconds:.0f}s"
+                        )
+
+                    try:
+                        msg = response_queue.get(
+                            timeout=min(MCP_RESPONSE_POLL_INTERVAL_SECONDS, remaining)
+                        )
+                        break
+                    except queue.Empty:
+                        if self.process.poll() is not None:
+                            raise RuntimeError(
+                                f"MCP server exited while waiting for '{method}'. "
+                                f"Stderr: {self._format_stderr_output()}"
+                            )
 
                 if "error" in msg:
                     raise RuntimeError(f"MCP error: {msg['error']}")
@@ -158,15 +204,15 @@ class McpClient:
             finally:
                 self._response_queues.pop(req_id, None)
 
-    def _initialize(self):
-        result = self._send_jsonrpc("initialize", {
+    def _initialize(self, timeout_seconds: float = MCP_CALL_TIMEOUT_SECONDS):
+        self._send_jsonrpc("initialize", {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
             "clientInfo": {
                 "name": "scrumai",
                 "version": "1.0.0"
             }
-        })
+        }, timeout_seconds=timeout_seconds)
 
         self._send_jsonrpc("notifications/initialized", {}, expect_response=False)
 
