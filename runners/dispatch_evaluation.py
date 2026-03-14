@@ -15,6 +15,7 @@ from pathlib import Path
 
 from client import LLMClient, load_prompt, parse_structured_response
 from models.dispatch_evaluation import DispatchEvaluationResult
+from models.role import AI_ROLES, ALL_ROLES, HUMAN_ROLES
 
 logger = logging.getLogger(__name__)
 
@@ -157,10 +158,16 @@ def run_evaluation(
     }
     
     prompt_template = load_prompt("dispatch_evaluation")
-    
+
     # Replace placeholders with actual file content
     input_json = json.dumps(evaluation_input, indent=2, ensure_ascii=False)
-    system_prompt = prompt_template.replace("{input_files}", input_json)
+    system_prompt = (
+        prompt_template
+        .replace("{input_files}", input_json)
+        .replace("{ai_roles}", ", ".join(AI_ROLES))
+        .replace("{human_roles}", ", ".join(HUMAN_ROLES))
+        .replace("{all_roles}", ", ".join(ALL_ROLES))
+    )
 
     print(f"{DIM}  Evaluating dispatch results...{RESET}", end="", flush=True)
 

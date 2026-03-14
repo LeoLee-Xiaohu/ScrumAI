@@ -6,8 +6,8 @@ Evaluate the accuracy of role assignments (human vs. AI) produced by the role di
 
 1. **Correctness** — Are human/AI assignments appropriate for each task's complexity and risk?
 2. **Consistency** — Are similar tasks assigned to similar roles?
-3. **Delegation Framework Adherence** — Do the 3-dimension scores (complexity, risk, human_judgment) align with the task descriptions?
-4. **Role Appropriateness** — Is the recommended_role (Junior/Senior Developer, Product Owner, Scrum Master, Reviewer) suitable for the task content?
+3. **Delegation Framework Adherence** — Do the 4-dimension scores (complexity, risk, human_judgment, domain_specificity) align with the task descriptions?
+4. **Role Appropriateness** — Is the recommended_role suitable for the task content under the current 6-role taxonomy?
 
 ## Input Files
 
@@ -23,14 +23,36 @@ You will receive a combined JSON object containing both files:
 **decomposed_tasks** contains:
 - Epic and stories structure
 - Task details (title, description, acceptance_criteria, dependencies, role, owner_type)
-- Original human-assigned roles and owner types (baseline for comparison)
+- Original decomposition roles and owner types. These are a useful baseline for intent, but note that the decomposition file may use a legacy role taxonomy.
 
 **dispatched_results** contains:
-- 3-dimension delegation scores (complexity, risk, human_judgment)
+- 4-dimension delegation scores (complexity, risk, human_judgment, domain_specificity)
 - Derived autonomy_level (autonomous/supervised/manual)
 - Derived owner_type (ai/human)
-- Recommended_role (Junior Developer, Senior Developer, Product Owner, Scrum Master, Reviewer)
+- Recommended_role
 - Reasoning for each assignment
+
+## Current Role Taxonomy
+
+- AI roles: {ai_roles}
+- Human roles: {human_roles}
+- All dispatch roles: {all_roles}
+
+## Important Role-Mapping Guidance
+
+- The decomposition file may still use legacy build roles such as `Junior Developer` and `Senior Developer`.
+- The dispatch file uses the new 6-role system above.
+- Do **not** treat a legacy decomposition role and a dispatched role as a mismatch just because the labels differ.
+- For AI-owned tasks, evaluate whether the dispatched role matches the task's **technical domain**:
+  - `Frontend Developer`: UI, client-side components, styling, interaction, browser/app presentation
+  - `Backend Developer`: APIs, services, business logic, data access, testing of server-side behavior
+  - `DevOps`: CI/CD, deployment, infrastructure, containers, cloud, environment setup, observability
+- For human-owned tasks, evaluate whether the dispatched role matches the task's **human responsibility**:
+  - `Product Owner`: product decisions, requirements, prioritization, user-value tradeoffs
+  - `Scrum Master`: coordination, process, unblockers, ceremonies, team workflow
+  - `Reviewer`: technical review, approval, QA gate, verification, sign-off
+- Use the original decomposition role only as a weak signal for intent, not as exact truth when the taxonomy differs.
+- A dispatch should only be considered role-incorrect when the chosen role is not appropriate for the task content under the new taxonomy.
 
 ## Input Data
 
@@ -53,11 +75,12 @@ Compare the `owner_type` field in both files. For each task:
 
 ### 2. Role Precision
 
-For tasks where owner_type matches, evaluate role assignment:
+For tasks where owner_type matches, evaluate role assignment under the current taxonomy:
 
 - **AI Roles:**
-  - Junior Developer: Appropriate for simple, well-defined tasks? (CRUD, boilerplate, standard patterns)
-  - Senior Developer: Appropriate for complex design/multi-component work?
+  - Frontend Developer: Appropriate for UI/client-facing work?
+  - Backend Developer: Appropriate for API/service/data/business-logic work?
+  - DevOps: Appropriate for infrastructure/deployment/environment/CI-CD work?
   
 - **Human Roles:**
   - Product Owner: Business decisions, requirements, goal-setting?
@@ -66,11 +89,11 @@ For tasks where owner_type matches, evaluate role assignment:
 
 **Scoring:**
 - Role match rate: `correct_roles / total_tasks * 100%`
-- Common role confusions (e.g., Junior vs. Senior Developer)
+- Common role confusions (e.g., Backend Developer vs. DevOps, Product Owner vs. Reviewer)
 
 ### 3. Delegation Score Validity
 
-For each task, assess whether the 3-dimension scores align with task characteristics:
+For each task, assess whether the 4-dimension scores align with task characteristics:
 
 **Complexity (0-2):**
 - 0 (Routine): Boilerplate, well-known patterns → Should be simple tasks like "Initialize project", "Create model"
@@ -87,16 +110,21 @@ For each task, assess whether the 3-dimension scores align with task characteris
 - 1 (Moderate): AI can handle but needs review → Some interpretation needed
 - 2 (Low AI trust): Continuous judgment, business decisions → Subjective evaluation required
 
+**Domain Specificity (0-2):**
+- 0 (Generic): No specialized domain routing needed
+- 1 (Domain-specific): Clearly belongs to one technical or business domain
+- 2 (Deep specialization): Requires strong domain expertise or specialized environment knowledge
+
 **Scoring:**
-- Dimension alignment rate: `aligned_dimensions / (total_tasks * 3) * 100%`
+- Dimension alignment rate: `aligned_dimensions / (total_tasks * 4) * 100%`
 - Identify over-scored or under-scored tasks
 
 ### 4. Autonomy Level Mapping
 
 Verify the autonomy_level follows the strict mapping:
 - Total 0-2 → `autonomous` + `owner_type: ai`
-- Total 3-4 → `supervised` + `owner_type: ai`
-- Total 5-6 → `manual` + `owner_type: human`
+- Total 3-5 → `supervised` + `owner_type: ai`
+- Total 6-8 → `manual` + `owner_type: human`
 
 **Scoring:**
 - Mapping correctness: `correct_mappings / total_tasks * 100%`
@@ -153,16 +181,16 @@ Respond in JSON format only:
     "correct_assignments": 13,
     "incorrect_assignments": 3,
     "confusion_matrix": {
-      "Junior_to_Senior": 1,
-      "Senior_to_Junior": 0,
-      "Product_Owner_to_Scrum_Master": 0
+      "Backend_Developer_to_DevOps": 1,
+      "Product_Owner_to_Reviewer": 0,
+      "Reviewer_to_Scrum_Master": 0
     },
     "notable_issues": [
       {
         "task_id": "TASK-010",
-        "dispatched_role": "Junior Developer",
-        "suggested_role": "Senior Developer",
-        "reason": "DELETE operations carry moderate risk; should be supervised by senior role despite simple implementation."
+        "dispatched_role": "Backend Developer",
+        "suggested_role": "Reviewer",
+        "reason": "The task is framed as a technical approval/checkpoint rather than implementation work, so a human review role is more appropriate."
       }
     ]
   },
@@ -185,6 +213,13 @@ Respond in JSON format only:
         "given_score": 1,
         "suggested_score": 2,
         "reason": "Comprehensive test design requires continuous human insight for edge case identification."
+      },
+      {
+        "task_id": "TASK-014",
+        "dimension": "domain_specificity",
+        "given_score": 0,
+        "suggested_score": 1,
+        "reason": "The work clearly belongs to infrastructure/CI ownership rather than a generic domain."
       }
     ]
   },
@@ -214,7 +249,7 @@ Respond in JSON format only:
   },
   "recommendations": [
     "Review framework selection tasks (TASK-001) — architectural decisions should remain human-owned.",
-    "Consider elevating DELETE operations (TASK-010) to Senior Developer due to data loss risk.",
+    "Revisit high-risk destructive operations (TASK-010) — if the task is approval-oriented, route it to Reviewer; if it is implementation-oriented, ensure the technical domain routing is correct.",
     "Improve reasoning specificity — reference actual task attributes rather than generic patterns.",
     "Re-calibrate complexity scores for simple CRUD operations to avoid over-scoring."
   ],
@@ -224,9 +259,9 @@ Respond in JSON format only:
 
 ## Guidelines
 
-- **Be objective**: Compare against the original human assignments as baseline truth
-- **Identify patterns**: Look for systematic biases (e.g., all database tasks assigned to Senior Developer)
-- **Assess severity**: Not all mismatches are equal — distinguish critical errors (security tasks to Junior AI) from minor ones (Junior vs. Senior Developer for medium tasks)
+- **Be objective**: Use the original decomposition as context, but evaluate against the current role taxonomy
+- **Identify patterns**: Look for systematic biases (e.g., backend tasks repeatedly routed to DevOps)
+- **Assess severity**: Not all mismatches are equal — distinguish critical errors (business-review tasks delegated to AI) from minor domain confusions (Backend Developer vs. DevOps)
 - **Provide actionable feedback**: Specific recommendations for improving the dispatch model
 - **Consider dependencies**: Tasks with complex dependency chains may need different treatment
 - **Validate score arithmetic**: Ensure total_score = complexity + risk + human_judgment for all tasks
@@ -239,6 +274,6 @@ The goal is not to achieve 100% match with original assignments, but to:
 1. **Catch critical errors** — High-risk tasks inappropriately delegated to AI
 2. **Improve calibration** — Identify systematic scoring biases
 3. **Enhance reasoning** — Ensure explanations are clear and accurate
-4. **Validate framework** — Confirm the 3-dimension scoring captures task characteristics
+4. **Validate framework** — Confirm the 4-dimension scoring captures task characteristics
 
-A good dispatch system should be **conservative** with AI delegation (prefer false human over false AI for ambiguous cases) and **transparent** in its reasoning.
+A good dispatch system should be **conservative** with AI delegation (prefer false human over false AI for ambiguous cases), **domain-aware** in AI routing, and **transparent** in its reasoning.

@@ -66,7 +66,7 @@ class DimensionScoreMismatch(BaseModel):
 
 
 class DimensionScoreAnalysis(BaseModel):
-    """Analysis of 3-dimension scoring accuracy."""
+    """Analysis of 4-dimension scoring accuracy."""
 
     aligned_scores: int = Field(
         description="Number of dimension scores aligned with task characteristics"
