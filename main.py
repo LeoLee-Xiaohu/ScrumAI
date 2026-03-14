@@ -151,7 +151,7 @@ Examples:
   uv run main.py dispatch                          Dispatch roles for tasks
   uv run main.py dispatch -f decomposed_task.json  Dispatch with explicit input
   uv run main.py evaluate-dispatch             Evaluate dispatch accuracy
-  uv run main.py export-kanban                 Export tasks to Vibe Kanban
+  uv run main.py export-kanban                 Export dispatched tasks to Vibe Kanban
   uv run main.py prompts                       List available prompts
         """,
     )
@@ -225,15 +225,11 @@ Examples:
 
     # export-kanban
     p_export = subparsers.add_parser(
-        "export-kanban", help="Export decomposed tasks to Vibe Kanban via MCP"
+        "export-kanban", help="Export dispatched tasks to Vibe Kanban via MCP"
     )
     p_export.add_argument(
-        "-i", "--decomposed", default="decomposed_task.json",
-        help="Path to decomposed_task.json"
-    )
-    p_export.add_argument(
-        "-e", "--evaluation", default="dispatch_evaluation.json",
-        help="Path to dispatch_evaluation.json"
+        "-d", "--dispatched", default="dispatched_task.json",
+        help="Path to dispatched_task.json"
     )
     p_export.add_argument(
         "--project-name", default="ScrumAI Project",

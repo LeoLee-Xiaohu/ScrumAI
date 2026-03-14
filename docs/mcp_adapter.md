@@ -1,6 +1,6 @@
 # MCP Adapter (mcp_adapter.py)
 
-The `mcp_adapter.py` is a Python-based client that implements the **Model Context Protocol (MCP)** to communicate with the **Vibe Kanban** server. It enables **ScrumAI** to export generated tasks, story points, and evaluations directly into a Vibe Kanban board.
+The `mcp_adapter.py` is a Python-based client that implements the **Model Context Protocol (MCP)** to communicate with the **Vibe Kanban** server. It enables **ScrumAI** to export generated tasks enriched with dispatch results directly into a Vibe Kanban board.
 
 ## Overview
 
@@ -22,9 +22,9 @@ The core class that manages the lifecycle of the MCP connection:
 ### 2. `run_mcp_export` Function
 The main orchestration function used by the `export-kanban` command:
 1. Loads task data from `decomposed_task.json`.
-2. Loads evaluation feedback from `dispatch_evaluation.json`.
+2. Loads role dispatch results from `dispatched_task.json`.
 3. Connects to the MCP server and selects the appropriate organization and project.
-4. Iterates through stories and tasks, formatting them into rich Markdown descriptions.
+4. Joins decomposed tasks with their dispatch metadata and formats them into rich Markdown descriptions.
 5. Skips tasks that already exist in the target project.
 6. Closes the connection gracefully.
 
@@ -36,10 +36,12 @@ The adapter transforms ScrumAI's JSON output into a human-readable format for Ka
 | :--- | :--- | :--- |
 | `task_id` | Title Prefix | e.g., `[STORY-1] Task Title` |
 | `title` | Issue Title | The main task name. |
-| `description` | Issue Description | Formatted with role and acceptance criteria. |
-| `role` | Metadata in Description | Assigned role (AI or Human). |
+| `description` | Issue Description | Formatted with task details and dispatch metadata. |
+| `recommended_role` | Metadata in Description | Final dispatched role. |
+| `owner_type` | Metadata in Description | Whether the task is assigned to AI or human. |
+| `autonomy_level` | Metadata in Description | Manual, supervised, or autonomous execution. |
 | `estimate_hours` | Metadata in Description | Time estimation. |
-| `risk_level` | Priority | If risk is 'high', the task priority is set to 'high'. |
+| `scoring.risk.score` | Priority | If risk score is `2`, the task priority is set to `high`. |
 
 ## Technical Implementation Details
 

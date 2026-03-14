@@ -106,6 +106,16 @@ uv run python main.py evaluate-dispatch -i decomposed_task.json -d dispatched_ta
 uv run python main.py evaluate-dispatch -o my_evaluation.json
 ```
 
+### Export Dispatched Tasks to Vibe Kanban
+
+Exports tasks from `decomposed_task.json` enriched with dispatch results from
+`dispatched_task.json`:
+
+```bash
+uv run python main.py export-kanban --project-name "Your Project Name"
+uv run python main.py export-kanban -i decomposed_task.json -d my_dispatch.json --project-name "Your Project Name"
+```
+
 ### List Available Prompts
 
 ```bash

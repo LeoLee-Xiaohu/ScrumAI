@@ -54,7 +54,7 @@ uv run python main.py dispatch
 uv run python main.py evaluate-dispatch
 ```
 
-这会生成 `dispatch_evaluation.json` 文件，包含风险评估和建议。
+这会生成 `dispatch_evaluation.json` 文件，用于评估分派准确性。
 
 ### 步骤 4: 导入任务到 Vibe Kanban
 
@@ -67,7 +67,7 @@ uv run python main.py export-kanban --project-name "test-scai"
 **参数说明**：
 - `--project-name`: Vibe Kanban 中的项目名称（默认 "ScrumAI Project"）
 - `-i` / `--decomposed`: 自定义分解任务文件路径（默认 `decomposed_task.json`）
-- `-e` / `--evaluation`: 自定义评估文件路径（默认 `dispatch_evaluation.json`）
+- `-d` / `--dispatched`: 自定义分派结果文件路径（默认 `dispatched_task.json`）
 
 ### 步骤 5: 查看任务
 
@@ -75,7 +75,7 @@ uv run python main.py export-kanban --project-name "test-scai"
 
 每个任务包含：
 - **标题**: `[STORY-001] 任务名称`
-- **描述**: 包含角色、预估时间、验收标准、任务描述等详细信息
+- **描述**: 包含 dispatched role、owner type、autonomy level、评分、验收标准、任务描述等详细信息
 
 ## 故障排除
 
@@ -101,5 +101,6 @@ uv run python main.py export-kanban --project-name "你的项目名"
 ## 文件说明
 
 - `decomposed_task.json` - AI 分解的任务列表
+- `dispatched_task.json` - 任务分派结果
 - `dispatch_evaluation.json` - 分派评估结果
 - `mcp_adapter.py` - MCP 模式适配器

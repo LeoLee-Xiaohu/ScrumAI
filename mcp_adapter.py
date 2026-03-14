@@ -35,6 +35,21 @@ class McpIssue:
     priority: Optional[str] = None
 
 
+def _format_score_line(scoring: dict) -> str:
+    labels = [
+        ("complexity", "Complexity"),
+        ("risk", "Risk"),
+        ("human_judgment", "Human Judgment"),
+        ("domain_specificity", "Domain Specificity"),
+    ]
+    parts = []
+    for key, label in labels:
+        score = scoring.get(key, {}).get("score")
+        if score is not None:
+            parts.append(f"{label}: {score}/2")
+    return " | ".join(parts)
+
+
 class McpClient:
     def __init__(self):
         self.process: Optional[subprocess.Popen] = None
@@ -231,42 +246,121 @@ class McpClient:
                 self.process.kill()
 
 
-def format_description(task, evaluation=None):
-    desc = f"**Role:** {task.get('role', 'Unassigned')}\n"
-    desc += f"**Estimate:** {task.get('estimate_hours', 0)} hours\n"
-    desc += f"**Acceptance Criteria:**\n{task.get('acceptance_criteria', 'None')}\n\n"
+def format_description(task: dict, dispatch: dict) -> str:
+    scoring = dispatch.get("scoring", {})
+    estimate_hours = task.get("estimate_hours")
+    story_points = task.get("story_points")
 
-    if evaluation:
-        desc += "---\n**Dispatch Evaluation Alerts:**\n"
-        desc += f"Suggested Role: {evaluation.get('suggested_role', 'N/A')}\n"
-        desc += f"Reason: {evaluation.get('reason', 'N/A')}\n\n"
+    lines = [
+        f"**Task ID:** {task.get('task_id', 'Unknown')}",
+        f"**Dispatched Role:** {dispatch.get('recommended_role', 'Unassigned')}",
+        f"**Owner Type:** {dispatch.get('owner_type', task.get('owner_type', 'unknown'))}",
+        f"**Autonomy Level:** {dispatch.get('autonomy_level', 'unknown')}",
+    ]
 
-    desc += "---\n**Task Description:**\n"
-    desc += task.get('description', '')
-    return desc
+    if estimate_hours is not None:
+        lines.append(f"**Estimate:** {estimate_hours} hours")
+    if story_points is not None:
+        lines.append(f"**Story Points:** {story_points}")
+    if scoring:
+        lines.append(f"**Dispatch Score:** {dispatch.get('total_score', 0)}/8")
+        score_line = _format_score_line(scoring)
+        if score_line:
+            lines.append(f"**Scoring Breakdown:** {score_line}")
+
+    acceptance_criteria = task.get("acceptance_criteria")
+    if acceptance_criteria:
+        lines.extend([
+            "",
+            "**Acceptance Criteria:**",
+            acceptance_criteria,
+        ])
+
+    dependencies = task.get("dependencies", [])
+    if dependencies:
+        lines.append("")
+        lines.append(f"**Dependencies:** {', '.join(dependencies)}")
+
+    reasoning = dispatch.get("reasoning")
+    if reasoning:
+        lines.extend([
+            "",
+            "**Dispatch Reasoning:**",
+            reasoning,
+        ])
+
+    lines.extend([
+        "",
+        "**Task Description:**",
+        task.get("description", ""),
+    ])
+
+    return "\n".join(lines)
+
+
+def _load_decomposed_tasks(path: str) -> list[dict]:
+    with open(path, "r", encoding="utf-8") as f:
+        decomposed_data = json.load(f)
+
+    tasks = []
+    for story in decomposed_data.get("stories", []):
+        story_id = story.get("id", "")
+        for task in story.get("tasks", []):
+            tasks.append({
+                "story_id": story_id,
+                **task,
+            })
+    return tasks
+
+
+def _load_dispatches(path: str) -> dict[str, dict]:
+    with open(path, "r", encoding="utf-8") as f:
+        dispatched_data = json.load(f)
+
+    return {
+        dispatch["task_id"]: dispatch
+        for dispatch in dispatched_data.get("dispatches", [])
+        if dispatch.get("task_id")
+    }
 
 
 def run_mcp_export(args):
-    import json as json_mod
+    decomposed_path = getattr(args, "decomposed", "decomposed_task.json")
 
-    if not os.path.exists(args.decomposed):
-        print(f"Error: {args.decomposed} not found.")
+    if not os.path.exists(decomposed_path):
+        print(f"Error: {decomposed_path} not found.")
         return False
 
-    with open(args.decomposed, 'r') as f:
-        decomposed_data = json_mod.load(f)
+    if not os.path.exists(args.dispatched):
+        print(f"Error: {args.dispatched} not found.")
+        return False
 
-    evaluations = {}
-    if os.path.exists(args.evaluation):
-        with open(args.evaluation, 'r') as f:
-            eval_data = json_mod.load(f)
-            for issue in eval_data.get('role_analysis', {}).get('notable_issues', []):
-                evaluations[issue['task_id']] = issue
-            for issue in eval_data.get('owner_type_analysis', {}).get('false_ai_assignments', []):
-                if issue['task_id'] not in evaluations:
-                    evaluations[issue['task_id']] = issue
-                else:
-                    evaluations[issue['task_id']].update(issue)
+    tasks = _load_decomposed_tasks(decomposed_path)
+    dispatches = _load_dispatches(args.dispatched)
+
+    if not tasks:
+        print(f"Error: No tasks found in {decomposed_path}.")
+        return False
+
+    export_items = []
+    missing_dispatches = []
+    for task in tasks:
+        task_id = task.get("task_id", "")
+        dispatch = dispatches.get(task_id)
+        if not dispatch:
+            missing_dispatches.append(task_id)
+            continue
+        export_items.append((task, dispatch))
+
+    if not export_items:
+        print(f"Error: No dispatched tasks matched tasks from {decomposed_path}.")
+        return False
+
+    if missing_dispatches:
+        print(
+            "Warning: Skipping tasks missing dispatch results:",
+            ", ".join(missing_dispatches),
+        )
 
     print("Starting Vibe Kanban MCP Server...")
     client = McpClient()
@@ -306,36 +400,32 @@ def run_mcp_export(args):
 
         tasks_inserted = 0
 
-        for story in decomposed_data.get('stories', []):
-            story_title = story.get('title', 'Unknown Story')
-            story_id = story.get('id', '')
+        for task, dispatch in export_items:
+            story_id = task.get("story_id", "")
+            title = f"[{story_id}] {task.get('title', 'Unnamed Task')}"
 
-            for task in story.get('tasks', []):
-                task_id_str = task.get('task_id', '')
-                title = f"[{story_id}] {task.get('title', 'Unnamed Task')}"
+            if title in existing_titles:
+                print(f"Task already exists: {title}")
+                continue
 
-                if title in existing_titles:
-                    print(f"Task already exists: {title}")
-                    continue
+            description = format_description(task, dispatch)
 
-                evaluation = evaluations.get(task_id_str)
-                description = format_description(task, evaluation)
+            priority = None
+            risk_score = dispatch.get("scoring", {}).get("risk", {}).get("score")
+            if risk_score == 2:
+                priority = "high"
 
-                priority = None
-                if evaluation and evaluation.get('risk_level') == 'high':
-                    priority = 'high'
-
-                issue_id = client.create_issue(
-                    project_id=project_id,
-                    title=title,
-                    description=description,
-                    priority=priority
-                )
-                if issue_id:
-                    tasks_inserted += 1
-                    print(f"Created: {title} (ID: {issue_id})")
-                else:
-                    print(f"Failed to create: {title}")
+            issue_id = client.create_issue(
+                project_id=project_id,
+                title=title,
+                description=description,
+                priority=priority
+            )
+            if issue_id:
+                tasks_inserted += 1
+                print(f"Created: {title} (ID: {issue_id})")
+            else:
+                print(f"Failed to create: {title}")
 
         print(f"\nSuccessfully created {tasks_inserted} tasks in Vibe Kanban via MCP.")
         return True
@@ -353,7 +443,7 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="Export ScrumAI tasks to Vibe Kanban via MCP")
     parser.add_argument("--decomposed", default="decomposed_task.json")
-    parser.add_argument("--evaluation", default="dispatch_evaluation.json")
+    parser.add_argument("--dispatched", default="dispatched_task.json")
     parser.add_argument("--project-name", default="ScrumAI Project")
     args = parser.parse_args()
     run_mcp_export(args)

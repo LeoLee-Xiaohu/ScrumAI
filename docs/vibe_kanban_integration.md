@@ -1,6 +1,6 @@
 # Vibe Kanban Integration Guide
 
-This guide explains how to connect **ScrumAI** with **Vibe Kanban** to transform AI-generated task decompositions and dispatch evaluations into actionable Kanban boards.
+This guide explains how to connect **ScrumAI** with **Vibe Kanban** to transform AI-generated task decompositions and dispatch results into actionable Kanban boards.
 
 ## 1. Prerequisites
 
@@ -14,7 +14,7 @@ This guide explains how to connect **ScrumAI** with **Vibe Kanban** to transform
 ## 2. Usage Instructions
 
 ### Step 1: Generate Tasks
-Run your usual ScrumAI workflow to generate the decomposed tasks and evaluations:
+Run your usual ScrumAI workflow to generate the decomposed tasks and dispatch results:
 
 ```bash
 uv run python main.py decompose -t "Your Goal Description"
@@ -44,16 +44,18 @@ uv run python main.py export-kanban --project-name "Your Project Name"
 **Options:**
 *   `--project-name`: The project name in Vibe Kanban (Default: "ScrumAI Project")
 *   `-i` / `--decomposed`: Custom path to decomposed JSON (Default: decomposed_task.json)
-*   `-e` / `--evaluation`: Custom path to evaluation JSON (Default: dispatch_evaluation.json)
+*   `-d` / `--dispatched`: Custom path to dispatch JSON (Default: dispatched_task.json)
 
 ## 3. How it Works (Data Mapping)
 
 ### Task Details
 Every task in Vibe Kanban will have a rich Markdown description containing:
-*   **Role:** The AI/Human role assigned to the task.
+*   **Dispatched Role:** The final role assigned by the dispatch step.
+*   **Owner Type / Autonomy:** Whether the task is AI or human owned, and how much autonomy it has.
+*   **Dispatch Score:** Total score and per-dimension breakdown from the dispatch step.
 *   **Estimate:** Estimated hours/story points.
 *   **Acceptance Criteria:** The specific criteria for task completion.
-*   **Dispatch Evaluation Alerts:** Critical feedback from the evaluation phase (e.g., "Too risky for Junior Developer").
+*   **Task Description:** The original decomposed task details.
 
 ### Avoid Duplicates
 The script checks for existing tasks by title within the specified project. If a task with the same name already exists, it will be skipped to prevent duplicates.
