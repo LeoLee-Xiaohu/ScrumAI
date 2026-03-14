@@ -35,6 +35,15 @@ class McpIssue:
     priority: Optional[str] = None
 
 
+SCRUMAI_DESCRIPTION_MARKERS = (
+    "**Task ID:**",
+    "**Dispatched Role:**",
+    "**Owner Type:**",
+    "**Autonomy Level:**",
+    "**Task Description:**",
+)
+
+
 def _format_score_line(scoring: dict) -> str:
     labels = [
         ("complexity", "Complexity"),
@@ -213,10 +222,17 @@ class McpClient:
             logger.error(f"Failed to create issue: {e}")
         return None
 
-    def list_issues(self, project_id: str, status: str = None, limit: int = 100) -> list[McpIssue]:
+    def list_issues(
+        self,
+        project_id: str,
+        status: str = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[McpIssue]:
         params = {
             "project_id": project_id,
             "limit": limit,
+            "offset": offset,
         }
         if status:
             params["status"] = status
@@ -236,6 +252,49 @@ class McpClient:
         except Exception as e:
             logger.warning(f"Failed to list issues: {e}")
         return []
+
+    def list_all_issues(self, project_id: str, status: str = None, page_size: int = 100) -> list[McpIssue]:
+        issues: list[McpIssue] = []
+        offset = 0
+
+        while True:
+            batch = self.list_issues(
+                project_id=project_id,
+                status=status,
+                limit=page_size,
+                offset=offset,
+            )
+            if not batch:
+                break
+
+            issues.extend(batch)
+            if len(batch) < page_size:
+                break
+            offset += len(batch)
+
+        return issues
+
+    def delete_issue(self, issue_id: str) -> bool:
+        try:
+            self.call_tool("delete_issue", {"issue_id": issue_id})
+            return True
+        except Exception as e:
+            logger.error(f"Failed to delete issue {issue_id}: {e}")
+        return False
+
+    def get_issue(self, issue_id: str) -> dict:
+        try:
+            result = self.call_tool("get_issue", {"issue_id": issue_id})
+            content = result.get("content", [])
+            if content and content[0].get("type") == "text":
+                data = json.loads(content[0]["text"])
+                if isinstance(data, dict):
+                    if isinstance(data.get("issue"), dict):
+                        return data["issue"]
+                    return data
+        except Exception as e:
+            logger.warning(f"Failed to get issue {issue_id}: {e}")
+        return {}
 
     def close(self):
         if self.process:
@@ -324,6 +383,36 @@ def _load_dispatches(path: str) -> dict[str, dict]:
     }
 
 
+def _resolve_project(client: McpClient, project_name: str) -> tuple[Optional[McpOrganization], Optional[McpProject], list[McpProject]]:
+    organizations = client.list_organizations()
+    if not organizations:
+        return None, None, []
+
+    org = organizations[0]
+    projects = client.list_projects(org.id)
+    for project in projects:
+        if project.name == project_name:
+            return org, project, projects
+
+    return org, None, projects
+
+
+def _looks_like_scrumai_issue_title(title: str) -> bool:
+    if not title.startswith("[") or "] " not in title:
+        return False
+    prefix = title[1:].split("]", 1)[0]
+    return bool(prefix) and "-" in prefix
+
+
+def _is_scrumai_issue(client: McpClient, issue: McpIssue) -> bool:
+    details = client.get_issue(issue.id)
+    description = details.get("description") if isinstance(details, dict) else None
+    if isinstance(description, str) and all(marker in description for marker in SCRUMAI_DESCRIPTION_MARKERS):
+        return True
+
+    return _looks_like_scrumai_issue_title(issue.title)
+
+
 def run_mcp_export(args):
     decomposed_path = getattr(args, "decomposed", "decomposed_task.json")
 
@@ -367,34 +456,26 @@ def run_mcp_export(args):
 
     try:
         print("Fetching organizations...")
-        organizations = client.list_organizations()
-        if not organizations:
+        org, project, projects = _resolve_project(client, args.project_name)
+        if not org:
             print("Error: No organizations found.")
             print("Please make sure you are signed in to Vibe Kanban.")
             return False
 
-        org_id = organizations[0].id
-        print(f"Using organization: {organizations[0].name}")
+        print(f"Using organization: {org.name}")
 
-        print("Fetching projects...")
-        projects = client.list_projects(org_id)
-
-        project_id = None
-        for p in projects:
-            if p.name == args.project_name:
-                project_id = p.id
-                print(f"Found project: {p.name}")
-                break
-
-        if not project_id:
+        if not project:
             print(f"Project '{args.project_name}' not found.")
             print("Available projects:", [p.name for p in projects])
             print("\nNote: MCP Server cannot create projects yet.")
             print("Please create the project in Vibe Kanban UI first.")
             return False
 
+        project_id = project.id
+        print(f"Found project: {project.name}")
+
         print(f"Fetching existing tasks in project...")
-        existing_tasks = client.list_issues(project_id)
+        existing_tasks = client.list_all_issues(project_id)
         existing_titles = {t.title for t in existing_tasks}
         print(f"Found {len(existing_tasks)} existing tasks")
 
@@ -428,6 +509,72 @@ def run_mcp_export(args):
                 print(f"Failed to create: {title}")
 
         print(f"\nSuccessfully created {tasks_inserted} tasks in Vibe Kanban via MCP.")
+        return True
+
+    except Exception as e:
+        print(f"MCP Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+    finally:
+        client.close()
+
+
+def run_mcp_clear(args):
+    if not getattr(args, "yes", False):
+        print("Refusing to delete issues without --yes.")
+        print("Re-run with --yes to remove all tickets from the target Vibe Kanban project.")
+        return False
+
+    print("Starting Vibe Kanban MCP Server...")
+    client = McpClient()
+
+    try:
+        print("Fetching organizations...")
+        org, project, projects = _resolve_project(client, args.project_name)
+        if not org:
+            print("Error: No organizations found.")
+            print("Please make sure you are signed in to Vibe Kanban.")
+            return False
+
+        print(f"Using organization: {org.name}")
+
+        if not project:
+            print(f"Project '{args.project_name}' not found.")
+            print("Available projects:", [p.name for p in projects])
+            return False
+
+        print(f"Found project: {project.name}")
+        print("Fetching all tasks in project...")
+        issues = client.list_all_issues(project.id)
+        if not issues:
+            print("No tasks found. Nothing to delete.")
+            return True
+
+        scrumai_issues = [issue for issue in issues if _is_scrumai_issue(client, issue)]
+        if not scrumai_issues:
+            print("No ScrumAI-exported tasks found. Nothing to delete.")
+            return True
+
+        print(f"Deleting {len(scrumai_issues)} ScrumAI-exported tasks...")
+        deleted = 0
+
+        for issue in scrumai_issues:
+            if client.delete_issue(issue.id):
+                deleted += 1
+                print(f"Deleted: {issue.title} ({issue.simple_id or issue.id})")
+            else:
+                print(f"Failed to delete: {issue.title} ({issue.simple_id or issue.id})")
+
+        if deleted != len(scrumai_issues):
+            print(
+                f"\nDeleted {deleted}/{len(scrumai_issues)} ScrumAI-exported tasks from project '{project.name}'."
+            )
+            return False
+
+        print(
+            f"\nSuccessfully deleted all {deleted} ScrumAI-exported tasks from project '{project.name}'."
+        )
         return True
 
     except Exception as e:

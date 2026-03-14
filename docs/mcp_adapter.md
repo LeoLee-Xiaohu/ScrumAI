@@ -17,7 +17,9 @@ The core class that manages the lifecycle of the MCP connection:
     - `list_organizations()`: Retrieves the user's Vibe Kanban organizations.
     - `list_projects(organization_id)`: Fetches projects under a specific organization.
     - `create_issue(project_id, title, description, priority)`: Creates a new task in the specified project.
-    - `list_issues(project_id)`: Used for duplicate detection before inserting new tasks.
+    - `list_issues(project_id)`: Fetches paginated issues from the specified project.
+    - `list_all_issues(project_id)`: Walks pagination to retrieve the full issue list.
+    - `delete_issue(issue_id)`: Deletes a single issue by ID.
 
 ### 2. `run_mcp_export` Function
 The main orchestration function used by the `export-kanban` command:
@@ -27,6 +29,14 @@ The main orchestration function used by the `export-kanban` command:
 4. Joins decomposed tasks with their dispatch metadata and formats them into rich Markdown descriptions.
 5. Skips tasks that already exist in the target project.
 6. Closes the connection gracefully.
+
+### 3. `run_mcp_clear` Function
+Used by the `clear-kanban` command to delete only ScrumAI-exported issues in a target Vibe Kanban project:
+1. Connects to the MCP server and resolves the requested organization/project.
+2. Fetches every issue in the project using paginated reads.
+3. Reads each issue's details and matches ScrumAI export markers in the description, with a title-based fallback.
+4. Requires an explicit `--yes` confirmation flag before deletion.
+5. Deletes matched issues one by one through the MCP `delete_issue` tool.
 
 ## Data Mapping
 
@@ -48,6 +58,7 @@ The adapter transforms ScrumAI's JSON output into a human-readable format for Ka
 - **MCP Protocol:** Uses the standard `2024-11-05` protocol version.
 - **Subprocess Management:** The Vibe Kanban server runs as a subprocess. The adapter captures `stderr` for debugging if the server fails to start.
 - **Timeout Handling:** Includes a 60-second timeout for RPC calls to ensure the CLI doesn't hang indefinitely.
+- **Safety Guard:** Bulk deletion requires the CLI `--yes` flag and only targets issues recognized as ScrumAI exports.
 
 ## Requirements
 

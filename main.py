@@ -28,7 +28,7 @@ Usage:
     uv run main.py --provider gemini decompose -f goal.md
 
     # Integration with Vibe Kanban
-    uv run main.py export-kanban --project-name "Your Project Name"
+    uv run main.py export-kanban -d my_dispatch.json --project-name "Your Project Name"
 """
 
 import argparse
@@ -125,6 +125,16 @@ def cmd_export_kanban(args: argparse.Namespace) -> None:
         sys.exit(1)
 
 
+def cmd_clear_kanban(args: argparse.Namespace) -> None:
+    """Run the clear-kanban command."""
+    from mcp_adapter import run_mcp_clear
+
+    success = run_mcp_clear(args)
+    if not success:
+        print("Clear failed.")
+        sys.exit(1)
+
+
 def cmd_list_prompts(_args: argparse.Namespace) -> None:
     """List all available prompts."""
     prompts_dir = Path(__file__).parent / "prompts"
@@ -151,7 +161,8 @@ Examples:
   uv run main.py dispatch                          Dispatch roles for tasks
   uv run main.py dispatch -f decomposed_task.json  Dispatch with explicit input
   uv run main.py evaluate-dispatch             Evaluate dispatch accuracy
-  uv run main.py export-kanban                 Export dispatched tasks to Vibe Kanban
+  uv run main.py export-kanban -d my_dispatch.json --project-name "Your Project Name"
+  uv run main.py clear-kanban --project-name "Your Project Name" --yes
   uv run main.py prompts                       List available prompts
         """,
     )
@@ -236,6 +247,21 @@ Examples:
         help="Name of the vibe-kanban project"
     )
     p_export.set_defaults(func=cmd_export_kanban)
+
+    # clear-kanban
+    p_clear = subparsers.add_parser(
+        "clear-kanban", help="Remove ScrumAI-exported tickets from a Vibe Kanban project via MCP"
+    )
+    p_clear.add_argument(
+        "--project-name", default="ScrumAI Project",
+        help="Name of the vibe-kanban project"
+    )
+    p_clear.add_argument(
+        "--yes",
+        action="store_true",
+        help="Confirm deletion of ScrumAI-exported tickets in the target project",
+    )
+    p_clear.set_defaults(func=cmd_clear_kanban)
 
     # prompts
     p_prompts = subparsers.add_parser("prompts", help="List available prompts")
