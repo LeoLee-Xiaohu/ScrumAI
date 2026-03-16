@@ -106,6 +106,26 @@ uv run python main.py evaluate-dispatch -i decomposed_task.json -d dispatched_ta
 uv run python main.py evaluate-dispatch -o my_evaluation.json
 ```
 
+### Export Dispatched Tasks to Vibe Kanban
+
+Exports tasks from `decomposed_task.json` enriched with dispatch results from
+`dispatched_task.json`:
+
+```bash
+uv run python main.py export-kanban -d my_dispatch.json --project-name "Your Project Name"
+uv run python main.py export-kanban --project-name "Your Project Name"  # uses dispatched_task.json by default
+```
+
+### Remove ScrumAI Tickets from a Vibe Kanban Project
+
+Deletes only tickets recognized as ScrumAI exports in the target Vibe Kanban project via MCP:
+
+```bash
+uv run python main.py clear-kanban --project-name "Your Project Name" --yes
+```
+
+The command identifies ScrumAI tickets by the Markdown markers added during export, with a title-pattern fallback. `--yes` is required because this operation is destructive.
+
 ### List Available Prompts
 
 ```bash
@@ -141,6 +161,7 @@ scrumai-prompts/
 │   ├── dispatch.py
 │   └── dispatch_evaluation.py
 ├── client.py             # LLM client (OpenAI-compatible + Google Genai)
+├── mcp_adapter.py        # Vibe Kanban MCP Client
 └── main.py              # CLI entry point
 ```
 

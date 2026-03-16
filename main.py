@@ -10,22 +10,25 @@ Prompt sources from scrumai-forge:
 
 Usage:
     # Interactive brainstorm session
-    python main.py brainstorm
+    uv run main.py brainstorm
 
     # Brainstorm with ticket context from file
-    python main.py brainstorm -f ticket.md
+    uv run main.py brainstorm -f ticket.md
 
     # Score an issue for AI-readiness
-    python main.py score -f ticket.md
-    python main.py score -t "Build a login page with email/password auth"
+    uv run main.py score -f ticket.md
+    uv run main.py score -t "Build a login page with email/password auth"
 
     # Decompose a goal into sub-tasks
-    python main.py decompose -f goal.md
-    python main.py decompose -t "Implement user authentication system"
+    uv run main.py decompose -f goal.md
+    uv run main.py decompose -t "Implement user authentication system"
 
     # Specify LLM provider
-    python main.py --provider openai brainstorm
-    python main.py --provider gemini decompose -f goal.md
+    uv run main.py --provider openai brainstorm
+    uv run main.py --provider gemini decompose -f goal.md
+
+    # Integration with Vibe Kanban
+    uv run main.py export-kanban -d my_dispatch.json --project-name "Your Project Name"
 """
 
 import argparse
@@ -113,6 +116,25 @@ def cmd_evaluate_dispatch(args: argparse.Namespace) -> None:
     )
 
 
+def cmd_export_kanban(args: argparse.Namespace) -> None:
+    """Run the export-kanban command."""
+    from mcp_adapter import run_mcp_export
+    success = run_mcp_export(args)
+    if not success:
+        print("Export failed.")
+        sys.exit(1)
+
+
+def cmd_clear_kanban(args: argparse.Namespace) -> None:
+    """Run the clear-kanban command."""
+    from mcp_adapter import run_mcp_clear
+
+    success = run_mcp_clear(args)
+    if not success:
+        print("Clear failed.")
+        sys.exit(1)
+
+
 def cmd_list_prompts(_args: argparse.Namespace) -> None:
     """List all available prompts."""
     prompts_dir = Path(__file__).parent / "prompts"
@@ -132,14 +154,16 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python main.py brainstorm                    Interactive brainstorm
-  python main.py brainstorm -f ticket.md       Brainstorm with ticket context
-  python main.py score -f ticket.md            Score issue readiness
-  python main.py decompose -t "Build a REST API"  Decompose a goal
-  python main.py dispatch                          Dispatch roles for tasks
-  python main.py dispatch -f decomposed_task.json  Dispatch with explicit input
-  python main.py evaluate-dispatch             Evaluate dispatch accuracy
-  python main.py prompts                       List available prompts
+  uv run main.py brainstorm                    Interactive brainstorm
+  uv run main.py brainstorm -f ticket.md       Brainstorm with ticket context
+  uv run main.py score -f ticket.md            Score issue readiness
+  uv run main.py decompose -t "Build a REST API"  Decompose a goal
+  uv run main.py dispatch                          Dispatch roles for tasks
+  uv run main.py dispatch -f decomposed_task.json  Dispatch with explicit input
+  uv run main.py evaluate-dispatch             Evaluate dispatch accuracy
+  uv run main.py export-kanban -d my_dispatch.json --project-name "Your Project Name"
+  uv run main.py clear-kanban --project-name "Your Project Name" --yes
+  uv run main.py prompts                       List available prompts
         """,
     )
     parser.add_argument(
@@ -209,6 +233,35 @@ Examples:
         help="Output JSON file (default: dispatch_evaluation.json)",
     )
     p_evaluate.set_defaults(func=cmd_evaluate_dispatch)
+
+    # export-kanban
+    p_export = subparsers.add_parser(
+        "export-kanban", help="Export dispatched tasks to Vibe Kanban via MCP"
+    )
+    p_export.add_argument(
+        "-d", "--dispatched", default="dispatched_task.json",
+        help="Path to dispatched_task.json"
+    )
+    p_export.add_argument(
+        "--project-name", default="ScrumAI Project",
+        help="Name of the vibe-kanban project"
+    )
+    p_export.set_defaults(func=cmd_export_kanban)
+
+    # clear-kanban
+    p_clear = subparsers.add_parser(
+        "clear-kanban", help="Remove ScrumAI-exported tickets from a Vibe Kanban project via MCP"
+    )
+    p_clear.add_argument(
+        "--project-name", default="ScrumAI Project",
+        help="Name of the vibe-kanban project"
+    )
+    p_clear.add_argument(
+        "--yes",
+        action="store_true",
+        help="Confirm deletion of ScrumAI-exported tickets in the target project",
+    )
+    p_clear.set_defaults(func=cmd_clear_kanban)
 
     # prompts
     p_prompts = subparsers.add_parser("prompts", help="List available prompts")
