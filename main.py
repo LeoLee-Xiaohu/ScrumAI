@@ -25,6 +25,7 @@ Usage:
 
     # Specify LLM provider
     uv run main.py --provider openai brainstorm
+    uv run main.py --provider minimax decompose -f goal.md
     uv run main.py --provider gemini decompose -f goal.md
 
     # Integration with Vibe Kanban
@@ -175,7 +176,7 @@ Examples:
     )
     parser.add_argument(
         "--provider",
-        choices=["openai", "gemini"],
+        choices=["openai", "minimax", "gemini"],
         default=None,
         help="LLM provider (default: auto-detect from env vars)",
     )
