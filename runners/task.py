@@ -5,6 +5,8 @@ Mirrors the existing main.py functionality with structured output validation.
 Usage:
     python main.py decompose -f goal.md
     python main.py decompose -t "Build a REST API for user management"
+    python main.py decompose -t "Add OAuth login" --repo-url https://github.com/owner/repo
+    python main.py decompose -t "Add payment feature" --repo owner/repo --branch develop
 """
 
 import json
@@ -14,6 +16,32 @@ from client import LLMClient, load_prompt, parse_structured_response
 from models.task import TaskDecompositionResult
 
 logger = logging.getLogger(__name__)
+
+
+def generate_repo_context(repo_url: str | None, branch: str | None = None) -> str:
+    """Generate repository context from GitHub URL.
+
+    Args:
+        repo_url: GitHub repository URL or "owner/repo" format
+        branch: Specific branch/tag/commit to read from
+
+    Returns:
+        Formatted context string for LLM consumption
+    """
+    if not repo_url:
+        return ""
+
+    from repo_context import generate_github_context
+
+    try:
+        print(f"\n{DIM}  Fetching repository context...{RESET}", end="", flush=True)
+        context = generate_github_context(repo_url, branch=branch)
+        print("\r" + " " * 40 + "\r", end="")
+        return context
+    except Exception as e:
+        logger.warning(f"Failed to fetch repo context: {e}")
+        print("\r" + " " * 40 + "\r", end="")
+        return ""
 
 # ANSI color codes
 CYAN = "\033[36m"
@@ -82,18 +110,40 @@ def _display_decomposition(result: TaskDecompositionResult) -> None:
     print(f"  {BOLD}Critical Path:{RESET} {' → '.join(plan.critical_path)}")
 
 
-def run_decomposition(client: LLMClient, task_description: str, output: str = "decomposed_task.json") -> None:
+def run_decomposition(
+    client: LLMClient,
+    task_description: str,
+    output: str = "decomposed_task.json",
+    repo_url: str | None = None,
+    branch: str | None = None,
+) -> None:
     """Decompose a high-level goal into sub-tasks.
 
     Mirrors: decompose_task() in original main.py, with Pydantic validation.
+
+    Args:
+        client: LLM client for generating decomposition
+        task_description: The high-level goal to decompose
+        output: Path to save the JSON output
+        repo_url: GitHub repository URL for context (optional)
+        branch: Specific branch/tag/commit to read from (optional)
     """
     prompt_template = load_prompt("task_decomposition")
-    # The task_decomposition prompt uses {task_description} placeholder
-    system_prompt = prompt_template.format(task_description=task_description)
+
+    repo_context = generate_repo_context(repo_url, branch)
+
+    if repo_context:
+        prompt_template = load_prompt("task_decomposition_with_context")
+        system_prompt = prompt_template.format(
+            task_description=task_description,
+            repo_context=repo_context,
+        )
+        print(f"\n{DIM}  Using repository context from: {repo_url}{RESET}")
+    else:
+        system_prompt = prompt_template.format(task_description=task_description)
 
     print(f"\n{DIM}  Decomposing task...{RESET}", end="", flush=True)
 
-    # For task decomposition, the full prompt is the system message
     raw_response = client.chat(system_prompt, [{"role": "user", "content": task_description}])
     print("\r" + " " * 40 + "\r", end="")
 
