@@ -59,14 +59,14 @@ class DimensionScoreMismatch(BaseModel):
     """A dimension score that doesn't align with task characteristics."""
 
     task_id: str
-    dimension: Literal["complexity", "risk", "human_judgment"]
+    dimension: Literal["complexity", "risk", "human_judgment", "domain_specificity"]
     given_score: int = Field(ge=0, le=2)
     suggested_score: int = Field(ge=0, le=2)
     reason: str = Field(description="Why the suggested score is more appropriate")
 
 
 class DimensionScoreAnalysis(BaseModel):
-    """Analysis of 3-dimension scoring accuracy."""
+    """Analysis of 4-dimension scoring accuracy."""
 
     aligned_scores: int = Field(
         description="Number of dimension scores aligned with task characteristics"
@@ -84,7 +84,7 @@ class AutonomyMappingIssue(BaseModel):
     """A task where autonomy level doesn't follow the mapping rules."""
 
     task_id: str
-    total_score: int = Field(ge=0, le=6)
+    total_score: int = Field(ge=0, le=8)
     expected_autonomy: Literal["autonomous", "supervised", "manual"]
     actual_autonomy: Literal["autonomous", "supervised", "manual"]
     expected_owner: Literal["human", "ai"]
