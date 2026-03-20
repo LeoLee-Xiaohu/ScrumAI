@@ -63,7 +63,10 @@ uv run main.py decompose -f goal.md --repo-url owner/repo
 ### 2. 私有仓库
 
 ```bash
-# 设置GitHub Token
+# 方式1: 在 .env 文件中配置（推荐）
+echo "GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxx" >> .env
+
+# 方式2: 直接导出环境变量
 export GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxx
 
 # 现在可以访问私有仓库
