@@ -243,9 +243,10 @@ class RepoContextGenerator:
 
     def _generate_header(self, repo_info: GitHubRepoInfo) -> str:
         """Generate context header."""
-        return f"""# Repository Context: {repo_info.full_name}
+        branch_info = f" @ {repo_info.branch}" if repo_info.branch else ""
+        return f"""# Repository Context: {repo_info.full_name}{branch_info}
 
-This context is extracted from the GitHub repository to provide relevant information for task decomposition.
+This context is extracted from the GitHub repository (branch: `{repo_info.branch}`) to provide relevant information for task decomposition.
 
 **Important**: When decomposing tasks, reference this context to ensure tasks align with the existing codebase architecture, patterns, and technologies."""
 

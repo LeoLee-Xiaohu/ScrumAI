@@ -126,7 +126,7 @@ class MiniMaxClient:
 
         response = self.client.messages.create(
             model=self.model,
-            max_tokens=32000,
+            max_tokens=100000,
             system=system_prompt,
             messages=[{"role": "user", "content": user_content}],
             timeout=600,

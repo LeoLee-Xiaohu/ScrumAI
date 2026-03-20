@@ -13,7 +13,7 @@ import json
 import logging
 
 from client import LLMClient, load_prompt, parse_structured_response
-from models.task import TaskDecompositionResult
+from models.task import RepoContext, TaskDecompositionResult
 
 logger = logging.getLogger(__name__)
 
@@ -33,14 +33,15 @@ def generate_repo_context(repo_url: str | None, branch: str | None = None) -> st
 
     from repo_context import generate_github_context
 
+    branch_info = f" (branch: {branch})" if branch else ""
     try:
-        print(f"\n{DIM}  Fetching repository context...{RESET}", end="", flush=True)
+        print(f"\n{DIM}  Fetching repository context{branch_info}...{RESET}", end="", flush=True)
         context = generate_github_context(repo_url, branch=branch)
-        print("\r" + " " * 40 + "\r", end="")
+        print("\r" + " " * 60 + "\r", end="")
         return context
     except Exception as e:
         logger.warning(f"Failed to fetch repo context: {e}")
-        print("\r" + " " * 40 + "\r", end="")
+        print("\r" + " " * 60 + "\r", end="")
         return ""
 
 # ANSI color codes
@@ -154,6 +155,14 @@ def run_decomposition(
         print(f"\n{RED}Error: Failed to parse response{RESET}")
         print(f"{DIM}{raw_response[:500]}{RESET}")
         return
+
+    if repo_url:
+        from datetime import datetime
+        result.repo_context = RepoContext(
+            repo_url=repo_url,
+            branch=branch,
+            fetched_at=datetime.now().isoformat(),
+        )
 
     _display_decomposition(result)
 
