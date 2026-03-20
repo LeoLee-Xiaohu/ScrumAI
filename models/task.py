@@ -58,8 +58,13 @@ class ExecutionPhase(BaseModel):
     """A phase in the execution plan."""
 
     phase: int
-    parallel_tasks: list[str] = Field(
+    parallel_tasks: list[str] | None = Field(
+        default=None,
         description="Task IDs that can run in parallel in this phase"
+    )
+    sequential_tasks: list[str] | None = Field(
+        default=None,
+        description="Task IDs that must run sequentially in this phase"
     )
     description: str
 
