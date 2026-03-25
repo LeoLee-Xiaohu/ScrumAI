@@ -29,7 +29,7 @@ Break down the goal into a hierarchical structure of tasks:
 - `title`: Clear, action-oriented title
 - `description`: What needs to be done (referencing specific files/patterns from the codebase)
 - `status`: Task status (enum: "todo", "in_progress", "blocked", "done")
-- `role`: Role type (enum: "Junior Developer", "Senior Developer", "Product Owner", "Scrum Master")
+- `role`: Role type (enum: "Frontend Developer", "Backend Developer", "DevOps", "Product Owner", "Scrum Master", "Reviewer")
 - `owner_type`: Either "human" or "ai"
 - `assignee`: Person ID or agent ID (leave empty if unassigned)
 - `estimate_hours`: Time estimate in hours (float, optional, 1-8 hours per task)

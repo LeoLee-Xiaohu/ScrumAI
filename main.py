@@ -98,6 +98,7 @@ def cmd_decompose(args: argparse.Namespace) -> None:
         output=args.output,
         repo_url=args.repo_url,
         branch=args.branch,
+        focus_paths=getattr(args, "focus_paths", None),
     )
 
 
@@ -166,6 +167,7 @@ Examples:
   uv run main.py decompose -t "Build a REST API"  Decompose a goal
   uv run main.py decompose -t "Add OAuth" --repo-url owner/repo  With repo context
   uv run main.py decompose -t "Add feature" --repo-url owner/repo --branch develop  Specific branch
+  uv run main.py decompose -t "Add feature" --repo-url owner/repo --focus-paths src tests  Focus paths
   uv run main.py dispatch                          Dispatch roles for tasks
   uv run main.py dispatch -f decomposed_task.json  Dispatch with explicit input
   uv run main.py evaluate-dispatch             Evaluate dispatch accuracy
@@ -215,6 +217,12 @@ Examples:
     p_decompose.add_argument(
         "--branch",
         help="Branch/tag/commit to read from (default: main or repository default)",
+    )
+    p_decompose.add_argument(
+        "--focus-paths",
+        nargs="+",
+        metavar="PATH",
+        help="Specific repository paths to focus on (e.g., --focus-paths src tests)",
     )
     p_decompose.set_defaults(func=cmd_decompose)
 

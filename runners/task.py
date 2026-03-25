@@ -18,12 +18,17 @@ from models.task import RepoContext, TaskDecompositionResult
 logger = logging.getLogger(__name__)
 
 
-def generate_repo_context(repo_url: str | None, branch: str | None = None) -> str:
+def generate_repo_context(
+    repo_url: str | None,
+    branch: str | None = None,
+    focus_paths: list[str] | None = None,
+) -> str:
     """Generate repository context from GitHub URL.
 
     Args:
         repo_url: GitHub repository URL or "owner/repo" format
         branch: Specific branch/tag/commit to read from
+        focus_paths: Specific paths to focus on (e.g., ["src", "tests"])
 
     Returns:
         Formatted context string for LLM consumption
@@ -36,7 +41,7 @@ def generate_repo_context(repo_url: str | None, branch: str | None = None) -> st
     branch_info = f" (branch: {branch})" if branch else ""
     try:
         print(f"\n{DIM}  Fetching repository context{branch_info}...{RESET}", end="", flush=True)
-        context = generate_github_context(repo_url, branch=branch)
+        context = generate_github_context(repo_url, branch=branch, focus_paths=focus_paths)
         print("\r" + " " * 60 + "\r", end="")
         return context
     except Exception as e:
@@ -117,6 +122,7 @@ def run_decomposition(
     output: str = "decomposed_task.json",
     repo_url: str | None = None,
     branch: str | None = None,
+    focus_paths: list[str] | None = None,
 ) -> None:
     """Decompose a high-level goal into sub-tasks.
 
@@ -128,10 +134,11 @@ def run_decomposition(
         output: Path to save the JSON output
         repo_url: GitHub repository URL for context (optional)
         branch: Specific branch/tag/commit to read from (optional)
+        focus_paths: Specific repository paths to focus on (optional)
     """
     prompt_template = load_prompt("task_decomposition")
 
-    repo_context = generate_repo_context(repo_url, branch)
+    repo_context = generate_repo_context(repo_url, branch, focus_paths=focus_paths)
 
     if repo_context:
         prompt_template = load_prompt("task_decomposition_with_context")

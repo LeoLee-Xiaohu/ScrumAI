@@ -9,11 +9,9 @@ Supports:
 import logging
 import os
 import re
-import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Generator
-from urllib.parse import urlparse
 
 import requests
 from dotenv import load_dotenv
@@ -34,15 +32,6 @@ class GitHubRepoInfo:
     @property
     def full_name(self) -> str:
         return f"{self.owner}/{self.repo}"
-
-
-@dataclass
-class RepoContent:
-    """Represents a file or directory in the repository."""
-    path: str
-    content: str = ""
-    is_directory: bool = False
-    size: int = 0
 
 
 @dataclass
@@ -239,7 +228,20 @@ class RepoContextGenerator:
         else:
             context_parts.append(self._generate_core_files(repo_info))
 
-        return "\n\n".join(context_parts)
+        full_context = "\n\n".join(context_parts)
+
+        # Approximate token count (1 token ≈ 4 characters) and truncate if needed.
+        # Truncate at section boundaries (double newlines) to preserve context coherence.
+        max_chars = self.config.max_total_tokens * 4
+        if len(full_context) > max_chars:
+            truncated = full_context[:max_chars]
+            # Walk back to the last complete section boundary
+            boundary = truncated.rfind("\n\n")
+            if boundary > 0:
+                truncated = truncated[:boundary]
+            full_context = truncated + "\n\n... [context truncated to stay within token limit]"
+
+        return full_context
 
     def _generate_header(self, repo_info: GitHubRepoInfo) -> str:
         """Generate context header."""
@@ -393,6 +395,7 @@ This context is extracted from the GitHub repository (branch: `{repo_info.branch
     def _generate_source_summary(self, repo_info: GitHubRepoInfo) -> str:
         """Generate summary of source code files."""
         sections = []
+        source_extensions = (".py", ".ts", ".js", ".go")
 
         source_dirs = ["src", "lib", "app", "packages", "internal"]
         for src_dir in source_dirs:
@@ -402,7 +405,26 @@ This context is extracted from the GitHub repository (branch: `{repo_info.branch
                 )
 
                 for item in contents[:10]:
-                    if item["type"] == "file" and item["name"].endswith((".py", ".ts", ".js", ".go")):
+                    if item["type"] == "file" and item["name"].endswith(source_extensions):
+                        try:
+                            content = self.reader.get_file_content(
+                                repo_info.owner, repo_info.repo, item["path"], ref=repo_info.branch
+                            )
+                            summary = self._summarize_code_file(content, item["name"])
+                            sections.append(f"### 📄 {item['path']}\n{summary}\n")
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+
+        if not sections:
+            # Fallback: scan root directory for source files
+            try:
+                root_contents = self.reader.list_directory(
+                    repo_info.owner, repo_info.repo, "", ref=repo_info.branch
+                )
+                for item in root_contents[:20]:
+                    if item["type"] == "file" and item["name"].endswith(source_extensions):
                         try:
                             content = self.reader.get_file_content(
                                 repo_info.owner, repo_info.repo, item["path"], ref=repo_info.branch
@@ -478,6 +500,7 @@ def generate_github_context(
     branch: str | None = None,
     token: str | None = None,
     max_depth: int = 3,
+    focus_paths: list[str] | None = None,
 ) -> str:
     """Convenience function to generate GitHub repository context.
 
@@ -486,6 +509,7 @@ def generate_github_context(
         branch: Specific branch/tag/commit to read from
         token: GitHub Personal Access Token for private repos
         max_depth: Maximum directory depth to explore
+        focus_paths: Specific paths to focus on (e.g., ["src", "tests"])
 
     Returns:
         Formatted context string suitable for LLM consumption
@@ -494,10 +518,12 @@ def generate_github_context(
         >>> context = generate_github_context("https://github.com/owner/repo")
         >>> context = generate_github_context("owner/repo", branch="develop")
         >>> context = generate_github_context("github.com/owner/private-repo", token="ghp_xxx")
+        >>> context = generate_github_context("owner/repo", focus_paths=["src", "tests"])
     """
     generator = RepoContextGenerator(token=token)
     return generator.generate_context(
         repo_url=repo_url,
         branch=branch,
         max_depth=max_depth,
+        focus_paths=focus_paths,
     )

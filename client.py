@@ -154,7 +154,7 @@ def get_client(provider: str | None = None) -> LLMClient:
 
     if provider == "openai":
         return OpenAICompatibleClient()
-    if provider in ("minimax"):
+    if provider == "minimax":
         return MiniMaxClient()
     if provider in ("gemini", "google"):
         return GoogleGenaiClient()
