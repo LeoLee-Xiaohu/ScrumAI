@@ -58,10 +58,23 @@ class ExecutionPhase(BaseModel):
     """A phase in the execution plan."""
 
     phase: int
-    parallel_tasks: list[str] = Field(
+    parallel_tasks: list[str] | None = Field(
+        default=None,
         description="Task IDs that can run in parallel in this phase"
     )
+    sequential_tasks: list[str] | None = Field(
+        default=None,
+        description="Task IDs that must run sequentially in this phase"
+    )
     description: str
+
+
+class RepoContext(BaseModel):
+    """GitHub repository context information."""
+
+    repo_url: str = Field(description="GitHub repository URL")
+    branch: str | None = Field(default=None, description="Branch/tag/commit used")
+    fetched_at: str | None = Field(default=None, description="Timestamp of context fetch")
 
 
 class ExecutionPlan(BaseModel):
@@ -80,6 +93,9 @@ class TaskDecompositionResult(BaseModel):
     This is the top-level structured output from the task decomposition prompt.
     """
 
+    repo_context: RepoContext | None = Field(
+        default=None, description="GitHub repository context used"
+    )
     epic: Epic
     reasoning: str = Field(
         description="Chain of thought analysis explaining the decomposition"

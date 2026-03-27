@@ -1,8 +1,16 @@
-"""LLM client supporting OpenAI-compatible and Google Genai backends.
+"""LLM client supporting OpenAI-compatible, MiniMax, and Google Genai backends.
 
-Mirrors the dual-provider setup in scrumai-forge:
-- src/lib/openai-client.ts (OpenAI-compatible, used for scoring & brainstorm)
-- Google Genai (existing provider in this repo)
+Supported providers:
+- OpenAI-compatible (OpenAI, DeepSeek, Groq, Together, OpenRouter, etc.)
+- MiniMax (via OpenAI-compatible endpoint)
+- Google Gemini
+
+Usage:
+    from client import get_client
+    client = get_client()           # Auto-detect
+    client = get_client("openai")    # Explicit provider
+    client = get_client("minimax")   # MiniMax
+    client = get_client("gemini")    # Google Gemini
 """
 
 import json
@@ -55,7 +63,7 @@ class OpenAICompatibleClient:
         response = self.client.chat.completions.create(
             model=self.model,
             messages=all_messages,  # type: ignore[arg-type]
-            max_tokens=4096,
+            max_tokens=200000,
         )
         content = response.choices[0].message.content
         return content or ""
@@ -76,7 +84,6 @@ class GoogleGenaiClient:
         self.client = genai.Client(api_key=self.api_key)
 
     def chat(self, system_prompt: str, messages: list[dict[str, str]]) -> str:
-        # Combine system prompt and messages into a single content string
         parts = [system_prompt]
         for msg in messages:
             role = msg["role"]
@@ -89,15 +96,66 @@ class GoogleGenaiClient:
         return response.text or ""
 
 
+class MiniMaxClient:
+    """MiniMax AI client using Anthropic-compatible API."""
+
+    def __init__(
+        self,
+        api_key: str | None = None,
+        base_url: str | None = None,
+        model: str | None = None,
+    ) -> None:
+        from anthropic import Anthropic
+
+        self.api_key = api_key or os.getenv("ANTHROPIC_API_KEY") or os.getenv("OPENAI_API_KEY", "")
+        self.base_url = base_url or os.getenv(
+            "ANTHROPIC_BASE_URL", "https://api.minimax.io/anthropic"
+        )
+        self.model = model or os.getenv("ANTHROPIC_MODEL", "MiniMax-M2.7")
+        self.client = Anthropic(
+            api_key=self.api_key,
+            base_url=self.base_url,
+        )
+
+    def chat(self, system_prompt: str, messages: list[dict[str, str]]) -> str:
+        user_content = ""
+        for msg in messages:
+            if msg["role"] == "user":
+                user_content = msg["content"]
+                break
+
+        response = self.client.messages.create(
+            model=self.model,
+            max_tokens=100000,
+            system=system_prompt,
+            messages=[{"role": "user", "content": user_content}],
+            timeout=600,
+        )
+
+        text_parts = []
+        for block in response.content:
+            if hasattr(block, 'text'):
+                text_parts.append(block.text)
+
+        return "\n".join(text_parts) if text_parts else ""
+
+
 def get_client(provider: str | None = None) -> LLMClient:
     """Create an LLM client based on provider name or environment.
 
     Priority: explicit provider > LLM_PROVIDER env var > auto-detect from available keys.
+
+    Supported providers:
+    - "openai": OpenAI API (or any OpenAI-compatible endpoint)
+    - "minimax": MiniMax API (via OpenAI-compatible endpoint)
+    - "gemini": Google Gemini
     """
     provider = provider or os.getenv("LLM_PROVIDER", "").lower()
 
     if provider == "openai":
         return OpenAICompatibleClient()
+    if provider == "minimax":
+        return MiniMaxClient()
     if provider in ("gemini", "google"):
         return GoogleGenaiClient()
 
@@ -108,8 +166,8 @@ def get_client(provider: str | None = None) -> LLMClient:
         return GoogleGenaiClient()
 
     raise ValueError(
-        "No LLM provider configured. Set LLM_PROVIDER=openai or LLM_PROVIDER=gemini, "
-        "and provide the corresponding API key (OPENAI_API_KEY or GEMINI_API_KEY)."
+        "No LLM provider configured. Set LLM_PROVIDER=openai, minimax, or gemini, "
+        "and provide the corresponding API key."
     )
 
 

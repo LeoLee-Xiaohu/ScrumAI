@@ -1,1 +1,1 @@
-Develop a login page with email/password authentication
+Develop a login page with email/password authentication for the ScrumAI web application.

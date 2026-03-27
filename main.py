@@ -25,6 +25,7 @@ Usage:
 
     # Specify LLM provider
     uv run main.py --provider openai brainstorm
+    uv run main.py --provider minimax decompose -f goal.md
     uv run main.py --provider gemini decompose -f goal.md
 
     # Integration with Vibe Kanban
@@ -89,10 +90,16 @@ def cmd_decompose(args: argparse.Namespace) -> None:
     client = get_client(args.provider)
     text = _read_input(args)
     if not text:
-        # Use default example
         text = "Develop a login page with email/password authentication"
         logger.info("No input provided, using example: %s", text)
-    run_decomposition(client, text, output=args.output)
+    run_decomposition(
+        client,
+        text,
+        output=args.output,
+        repo_url=args.repo_url,
+        branch=args.branch,
+        focus_paths=getattr(args, "focus_paths", None),
+    )
 
 
 def cmd_dispatch(args: argparse.Namespace) -> None:
@@ -158,6 +165,9 @@ Examples:
   uv run main.py brainstorm -f ticket.md       Brainstorm with ticket context
   uv run main.py score -f ticket.md            Score issue readiness
   uv run main.py decompose -t "Build a REST API"  Decompose a goal
+  uv run main.py decompose -t "Add OAuth" --repo-url owner/repo  With repo context
+  uv run main.py decompose -t "Add feature" --repo-url owner/repo --branch develop  Specific branch
+  uv run main.py decompose -t "Add feature" --repo-url owner/repo --focus-paths src tests  Focus paths
   uv run main.py dispatch                          Dispatch roles for tasks
   uv run main.py dispatch -f decomposed_task.json  Dispatch with explicit input
   uv run main.py evaluate-dispatch             Evaluate dispatch accuracy
@@ -168,7 +178,7 @@ Examples:
     )
     parser.add_argument(
         "--provider",
-        choices=["openai", "gemini"],
+        choices=["openai", "minimax", "gemini"],
         default=None,
         help="LLM provider (default: auto-detect from env vars)",
     )
@@ -199,6 +209,20 @@ Examples:
     p_decompose.add_argument("-t", "--task", help="Goal description as text")
     p_decompose.add_argument(
         "-o", "--output", default="decomposed_task.json", help="Output JSON file"
+    )
+    p_decompose.add_argument(
+        "--repo-url",
+        help="GitHub repository URL for context (e.g., https://github.com/owner/repo or owner/repo)",
+    )
+    p_decompose.add_argument(
+        "--branch",
+        help="Branch/tag/commit to read from (default: main or repository default)",
+    )
+    p_decompose.add_argument(
+        "--focus-paths",
+        nargs="+",
+        metavar="PATH",
+        help="Specific repository paths to focus on (e.g., --focus-paths src tests)",
     )
     p_decompose.set_defaults(func=cmd_decompose)
 
