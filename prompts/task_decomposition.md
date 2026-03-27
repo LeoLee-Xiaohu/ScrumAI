@@ -55,7 +55,7 @@ Return your response as valid JSON with this structure:
           "title": "Task title",
           "description": "What needs to be done",
           "status": "todo",
-          "role": "Junior Developer",
+          "role": "Backend Developer",
           "owner_type": "ai",
           "assignee": "",
           "estimate_hours": 2.0,
@@ -85,9 +85,8 @@ Return your response as valid JSON with this structure:
 ## Guidelines
 - Keep tasks small and focused (ideally completable in 1-4 hours)
 - Identify tasks that can run in parallel to maximize efficiency
-- Flag tasks that need human decision-making with `requires_review: true`
-- Assign simpler tasks to "Junior Developer", complex/critical ones to "Senior Developer"
-- Mark tasks requiring human expertise or decisions as "Human Required"
+- Assign `role` using only the 6 defined roles: "Frontend Developer", "Backend Developer", "DevOps", "Product Owner", "Scrum Master", "Reviewer"
+- Use `owner_type: "ai"` for technical implementation tasks (Frontend/Backend/DevOps); use `owner_type: "human"` for decision/review tasks (Product Owner/Scrum Master/Reviewer)
 - Always provide clear acceptance criteria in descriptions
 
 ---
