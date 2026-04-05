@@ -4,12 +4,13 @@ on:
   pull_request:
     paths:
       - 'prompts/**'
-      - 'scripts/lint-prompts.sh'
+      - 'scripts/**'
   push:
     branches:
       - main
     paths:
       - 'prompts/**'
+      - 'scripts/**'
 
 jobs:
   lint:
@@ -22,3 +23,8 @@ jobs:
         run: |
           chmod +x scripts/lint-prompts.sh
           ./scripts/lint-prompts.sh
+
+      - name: Run lint tests
+        run: |
+          chmod +x scripts/test-lint-prompts.sh
+          ./scripts/test-lint-prompts.sh
