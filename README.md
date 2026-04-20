@@ -172,6 +172,12 @@ Pydantic models mirror TypeScript types from `scrumai-forge`:
 - `models/scoring.py` ↔ `src/lib/issue-scorer.ts`
 - `models/role.py` ↔ Role dispatch framework (Lubars & Tan, 2019)
 
+## Prompt Management
+
+The `prompts/` directory is the single source of truth for all ScrumAI system prompts. These files are consumed by the [ScrumAI Forge](https://github.com/oldcai/scrumai-forge) Jira plugin via GitHub raw URLs, with a 5-minute cache TTL.
+
+**To modify prompts**: Follow the workflow in [CONTRIBUTING.md](CONTRIBUTING.md) — create an issue, submit a PR, and get team review before merging. Changes take effect automatically within 5 minutes after merge.
+
 ## Help
 
 To see all available options:
