@@ -1,0 +1,69 @@
+{
+  "epic": {
+    "title": "Demo: blocker flow with trivial tasks",
+    "description": "Three-step linear chain that each only touches one tiny text file"
+  },
+  "reasoning": "Minimal demo so each task is a 1-line file operation Claude Code can finish in seconds",
+  "stories": [
+    {
+      "id": "STORY-DEMO",
+      "title": "Write a two-line poem via three steps",
+      "tasks": [
+        {
+          "task_id": "TASK-DEMO-001",
+          "title": "Create step1.txt with one line",
+          "description": "Create a new file named step1.txt in the repo root. The file should contain exactly one line: 'roses are red'. Stage and commit the file with message 'step 1'.",
+          "status": "todo",
+          "role": "Backend Developer",
+          "owner_type": "ai",
+          "assignee": "",
+          "estimate_hours": 0.1,
+          "story_points": 1,
+          "dependencies": [],
+          "acceptance_criteria": "File step1.txt exists and contains 'roses are red'",
+          "blocker_reason": null,
+          "artifacts": []
+        },
+        {
+          "task_id": "TASK-DEMO-002",
+          "title": "Append second line to step2.txt",
+          "description": "Create a new file named step2.txt in the repo root. Copy the contents of step1.txt into it, then append one more line: 'violets are blue'. Stage and commit with message 'step 2'.",
+          "status": "todo",
+          "role": "Backend Developer",
+          "owner_type": "ai",
+          "assignee": "",
+          "estimate_hours": 0.1,
+          "story_points": 1,
+          "dependencies": ["TASK-DEMO-001"],
+          "acceptance_criteria": "File step2.txt exists with both lines",
+          "blocker_reason": null,
+          "artifacts": []
+        },
+        {
+          "task_id": "TASK-DEMO-003",
+          "title": "Print the final poem to README",
+          "description": "Append the contents of step2.txt to the bottom of README.md under a new heading '## Poem'. Stage and commit with message 'step 3'.",
+          "status": "todo",
+          "role": "Backend Developer",
+          "owner_type": "ai",
+          "assignee": "",
+          "estimate_hours": 0.1,
+          "story_points": 1,
+          "dependencies": ["TASK-DEMO-002"],
+          "acceptance_criteria": "README.md has a '## Poem' section with the two lines",
+          "blocker_reason": null,
+          "artifacts": []
+        }
+      ]
+    }
+  ],
+  "execution_plan": {
+    "phases": [
+      {"phase": 1, "parallel_tasks": ["TASK-DEMO-001"], "sequential_tasks": null, "description": "Seed"},
+      {"phase": 2, "parallel_tasks": ["TASK-DEMO-002"], "sequential_tasks": null, "description": "Append"},
+      {"phase": 3, "parallel_tasks": ["TASK-DEMO-003"], "sequential_tasks": null, "description": "Publish"}
+    ],
+    "total_estimated_hours": 0.3,
+    "critical_path": ["TASK-DEMO-001", "TASK-DEMO-002", "TASK-DEMO-003"]
+  }
+}

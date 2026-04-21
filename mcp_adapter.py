@@ -6,6 +6,7 @@ import time
 import logging
 import os
 from collections import deque
+from datetime import datetime, timezone
 from typing import Optional
 from dataclasses import dataclass
 
@@ -153,6 +154,18 @@ class McpClient:
             if not self.process or not self.process.stdin:
                 raise RuntimeError("MCP process is not available.")
 
+            if not expect_response:
+                # JSON-RPC 2.0: notifications MUST NOT include an id field.
+                notification = {
+                    "jsonrpc": "2.0",
+                    "method": method,
+                    "params": params or {}
+                }
+                request_str = json.dumps(notification) + "\n"
+                self.process.stdin.write(request_str)
+                self.process.stdin.flush()
+                return {}
+
             self.request_id += 1
             req_id = self.request_id
 
@@ -162,12 +175,6 @@ class McpClient:
                 "method": method,
                 "params": params or {}
             }
-
-            if not expect_response:
-                request_str = json.dumps(request) + "\n"
-                self.process.stdin.write(request_str)
-                self.process.stdin.flush()
-                return {}
 
             response_queue = queue.Queue()
             self._response_queues[req_id] = response_queue
@@ -326,6 +333,70 @@ class McpClient:
             return True
         except Exception as e:
             logger.error(f"Failed to delete issue {issue_id}: {e}")
+        return False
+
+    def update_issue(
+        self,
+        issue_id: str,
+        status: str = None,
+        title: str = None,
+        description: str = None,
+        priority: str = None,
+    ) -> bool:
+        params = {"issue_id": issue_id}
+        if status is not None:
+            params["status"] = status
+        if title is not None:
+            params["title"] = title
+        if description is not None:
+            params["description"] = description
+        if priority is not None:
+            params["priority"] = priority
+
+        try:
+            self.call_tool("update_issue", params)
+            return True
+        except Exception as e:
+            logger.error(f"Failed to update issue {issue_id}: {e}")
+        return False
+
+    def create_issue_relationship(
+        self,
+        issue_id: str,
+        related_issue_id: str,
+        relationship_type: str,
+    ) -> bool:
+        try:
+            result = self.call_tool("create_issue_relationship", {
+                "issue_id": issue_id,
+                "related_issue_id": related_issue_id,
+                "relationship_type": relationship_type,
+            })
+            if result.get("isError"):
+                logger.warning(f"create_issue_relationship returned error: {result}")
+                return False
+            return True
+        except Exception as e:
+            logger.error(f"Failed to create relationship {issue_id} -{relationship_type}-> {related_issue_id}: {e}")
+        return False
+
+    def list_tags(self, project_id: str) -> list[dict]:
+        try:
+            result = self.call_tool("list_tags", {"project_id": project_id})
+            content = result.get("content", [])
+            if content and content[0].get("type") == "text":
+                data = json.loads(content[0]["text"])
+                return data.get("tags", []) if isinstance(data, dict) else []
+        except Exception as e:
+            logger.warning(f"Failed to list tags: {e}")
+        return []
+
+    def add_issue_tag(self, issue_id: str, tag_id: str) -> bool:
+        try:
+            self.call_tool("add_issue_tag", {"issue_id": issue_id, "tag_id": tag_id})
+            return True
+        except Exception as e:
+            logger.error(f"Failed to add tag {tag_id} to issue {issue_id}: {e}")
         return False
 
     def get_issue(self, issue_id: str) -> dict:
@@ -525,7 +596,23 @@ def run_mcp_export(args):
         existing_titles = {t.title for t in existing_tasks}
         print(f"Found {len(existing_tasks)} existing tasks")
 
+        # Identify which tasks have at-export-time blockers: any dependency
+        # that is itself being exported in this batch. These start in Backlog
+        # and get promoted to "To do" by watch-kanban once their blockers are Done.
+        exported_task_ids = {
+            t.get("task_id") for t, _ in export_items if t.get("task_id")
+        }
+        has_blocker: dict[str, bool] = {}
+        for task, _ in export_items:
+            task_id = task.get("task_id")
+            if not task_id:
+                continue
+            deps = task.get("dependencies", [])
+            has_blocker[task_id] = any(d in exported_task_ids for d in deps)
+
         tasks_inserted = 0
+        tasks_parked = 0
+        task_id_to_issue_id: dict[str, str] = {}
 
         for task, dispatch in export_items:
             story_id = task.get("story_id", "")
@@ -548,17 +635,206 @@ def run_mcp_export(args):
                 description=description,
                 priority=priority
             )
-            if issue_id:
-                tasks_inserted += 1
-                print(f"Created: {title} (ID: {issue_id})")
-            else:
+            if not issue_id:
                 print(f"Failed to create: {title}")
+                continue
 
-        print(f"\nSuccessfully created {tasks_inserted} tasks in Vibe Kanban via MCP.")
+            tasks_inserted += 1
+            task_id = task.get("task_id")
+            if task_id:
+                task_id_to_issue_id[task_id] = issue_id
+
+            if task_id and has_blocker.get(task_id):
+                if client.update_issue(issue_id=issue_id, status="Backlog"):
+                    tasks_parked += 1
+                    print(f"Created (parked in Backlog): {title} (ID: {issue_id})")
+                else:
+                    print(f"Created but failed to park in Backlog: {title} (ID: {issue_id})")
+            else:
+                print(f"Created (To do): {title} (ID: {issue_id})")
+
+        relationships_created = 0
+        relationships_skipped = 0
+        for task, _ in export_items:
+            task_id = task.get("task_id")
+            blocked_issue_id = task_id_to_issue_id.get(task_id)
+            if not blocked_issue_id:
+                continue
+            for dep_task_id in task.get("dependencies", []):
+                blocker_issue_id = task_id_to_issue_id.get(dep_task_id)
+                if not blocker_issue_id:
+                    relationships_skipped += 1
+                    continue
+                if client.create_issue_relationship(
+                    issue_id=blocker_issue_id,
+                    related_issue_id=blocked_issue_id,
+                    relationship_type="blocking",
+                ):
+                    relationships_created += 1
+                    print(f"  → {dep_task_id} blocks {task_id}")
+
+        if relationships_created or relationships_skipped:
+            print(
+                f"\nCreated {relationships_created} blocking relationships"
+                + (f" (skipped {relationships_skipped} unresolved deps)" if relationships_skipped else "")
+            )
+
+        # Persist task_id -> issue_id mapping so watch-kanban can resolve issues
+        # without having to re-fetch and title-match every tick.
+        mapping_path = getattr(args, "mapping", "kanban_mapping.json")
+        mapping_payload = {
+            "project_id": project_id,
+            "project_name": project.name,
+            "organization_id": org.id,
+            "decomposed_path": os.path.abspath(decomposed_path),
+            "task_to_issue": task_id_to_issue_id,
+            "exported_at": datetime.now(timezone.utc).isoformat(),
+        }
+        try:
+            with open(mapping_path, "w", encoding="utf-8") as f:
+                json.dump(mapping_payload, f, indent=2)
+            print(f"Saved Kanban mapping to {mapping_path}")
+        except Exception as e:
+            print(f"Warning: failed to write mapping file {mapping_path}: {e}")
+
+        print(
+            f"\nSuccessfully created {tasks_inserted} tasks in Vibe Kanban via MCP"
+            + (f" ({tasks_parked} parked in Backlog awaiting blockers)." if tasks_parked else ".")
+        )
         return True
 
     except Exception as e:
         print(f"MCP Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+    finally:
+        client.close()
+
+
+DONE_STATUS_NAMES = {"Done", "done", "DONE"}
+BACKLOG_STATUS_NAMES = {"Backlog", "backlog", "BACKLOG"}
+
+
+def _build_dependency_graph(decomposed_path: str) -> dict[str, list[str]]:
+    """Return a mapping of task_id -> list of dependency task_ids."""
+    tasks = _load_decomposed_tasks(decomposed_path)
+    graph: dict[str, list[str]] = {}
+    for task in tasks:
+        task_id = task.get("task_id")
+        if task_id:
+            graph[task_id] = list(task.get("dependencies", []))
+    return graph
+
+
+def run_mcp_watch(args):
+    mapping_path = getattr(args, "mapping", "kanban_mapping.json")
+
+    if not os.path.exists(mapping_path):
+        print(f"Error: mapping file '{mapping_path}' not found.")
+        print("Run export-kanban first so it writes the task_id -> issue_id mapping.")
+        return False
+
+    with open(mapping_path, "r", encoding="utf-8") as f:
+        mapping = json.load(f)
+
+    project_id = mapping.get("project_id")
+    project_name = mapping.get("project_name", "<unknown>")
+    task_to_issue: dict[str, str] = mapping.get("task_to_issue", {})
+
+    if not project_id or not task_to_issue:
+        print(f"Error: mapping file '{mapping_path}' is missing project_id or task_to_issue.")
+        return False
+
+    decomposed_path = getattr(args, "decomposed", None) or mapping.get(
+        "decomposed_path", "decomposed_task.json"
+    )
+    if not os.path.exists(decomposed_path):
+        print(f"Error: decomposed file '{decomposed_path}' not found.")
+        return False
+
+    dep_graph = _build_dependency_graph(decomposed_path)
+
+    # issue_id -> task_id reverse lookup, so we can check blocker statuses by task_id
+    issue_to_task = {v: k for k, v in task_to_issue.items()}
+
+    interval = max(1, int(getattr(args, "interval", 5) or 5))
+    run_once = bool(getattr(args, "once", False))
+
+    print(f"Watching project '{project_name}' (project_id={project_id})")
+    print(f"Tracking {len(task_to_issue)} tasks from {decomposed_path}")
+    print(f"Mode: {'single scan' if run_once else f'continuous (every {interval}s)'}")
+    print("Press Ctrl+C to stop.\n")
+
+    print("Starting Vibe Kanban MCP Server...")
+    client = McpClient()
+
+    try:
+        while True:
+            issues = client.list_all_issues(project_id)
+            # task_id -> current status string
+            task_status: dict[str, str] = {}
+            for issue in issues:
+                task_id = issue_to_task.get(issue.id)
+                if task_id:
+                    task_status[task_id] = issue.status
+
+            promoted_this_tick = 0
+            still_backlog = 0
+
+            for task_id, issue_id in task_to_issue.items():
+                current_status = task_status.get(task_id)
+                if current_status not in BACKLOG_STATUS_NAMES:
+                    continue
+                still_backlog += 1
+
+                deps = dep_graph.get(task_id, [])
+                # Only consider deps that we actually exported; external deps are ignored.
+                internal_deps = [d for d in deps if d in task_to_issue]
+                if not internal_deps:
+                    # Parked with no trackable blockers -> promote immediately.
+                    pending = []
+                else:
+                    pending = [
+                        d for d in internal_deps
+                        if task_status.get(d) not in DONE_STATUS_NAMES
+                    ]
+
+                if pending:
+                    continue
+
+                if client.update_issue(issue_id=issue_id, status="To do"):
+                    promoted_this_tick += 1
+                    print(
+                        f"[unblock] {task_id} promoted Backlog -> To do "
+                        f"(all blockers Done: {', '.join(internal_deps) if internal_deps else 'none'})"
+                    )
+                else:
+                    print(f"[warn] failed to promote {task_id} (issue {issue_id})")
+
+            if promoted_this_tick:
+                print(f"  promoted {promoted_this_tick} this tick; {still_backlog - promoted_this_tick} still backlogged")
+
+            if run_once:
+                break
+
+            # Stop if nothing remains in Backlog -- all tasks are unlocked.
+            remaining_backlog = still_backlog - promoted_this_tick
+            if remaining_backlog == 0 and still_backlog == 0:
+                # Either everything already promoted, or nothing was ever parked.
+                # If it's stable with no backlog items for one full tick, exit.
+                print("No tasks remain in Backlog. Watcher exiting.")
+                break
+
+            time.sleep(interval)
+
+        return True
+
+    except KeyboardInterrupt:
+        print("\nWatcher stopped by user.")
+        return True
+    except Exception as e:
+        print(f"Watch error: {e}")
         import traceback
         traceback.print_exc()
         return False

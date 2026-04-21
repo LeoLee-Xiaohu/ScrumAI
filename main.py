@@ -142,6 +142,16 @@ def cmd_clear_kanban(args: argparse.Namespace) -> None:
         sys.exit(1)
 
 
+def cmd_watch_kanban(args: argparse.Namespace) -> None:
+    """Run the watch-kanban command - promotes Backlog tasks whose blockers are Done."""
+    from mcp_adapter import run_mcp_watch
+
+    success = run_mcp_watch(args)
+    if not success:
+        print("Watch failed.")
+        sys.exit(1)
+
+
 def cmd_list_prompts(_args: argparse.Namespace) -> None:
     """List all available prompts."""
     prompts_dir = Path(__file__).parent / "prompts"
@@ -270,6 +280,10 @@ Examples:
         "--project-name", default="ScrumAI Project",
         help="Name of the vibe-kanban project"
     )
+    p_export.add_argument(
+        "--mapping", default="kanban_mapping.json",
+        help="Path to write the task_id -> issue_id mapping (consumed by watch-kanban)",
+    )
     p_export.set_defaults(func=cmd_export_kanban)
 
     # clear-kanban
@@ -286,6 +300,29 @@ Examples:
         help="Confirm deletion of ScrumAI-exported tickets in the target project",
     )
     p_clear.set_defaults(func=cmd_clear_kanban)
+
+    # watch-kanban
+    p_watch = subparsers.add_parser(
+        "watch-kanban",
+        help="Promote Backlog tasks to To-do once their blockers reach Done",
+    )
+    p_watch.add_argument(
+        "--mapping", default="kanban_mapping.json",
+        help="Path to the task_id -> issue_id mapping file written by export-kanban",
+    )
+    p_watch.add_argument(
+        "--decomposed", default=None,
+        help="Path to decomposed_task.json (defaults to the path recorded in the mapping file)",
+    )
+    p_watch.add_argument(
+        "--interval", type=int, default=5,
+        help="Poll interval in seconds (default: 5)",
+    )
+    p_watch.add_argument(
+        "--once", action="store_true",
+        help="Scan once and exit instead of looping",
+    )
+    p_watch.set_defaults(func=cmd_watch_kanban)
 
     # prompts
     p_prompts = subparsers.add_parser("prompts", help="List available prompts")

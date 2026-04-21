@@ -1,0 +1,46 @@
+{
+  "dispatches": [
+    {
+      "task_id": "TASK-DEMO-001",
+      "scoring": {
+        "complexity": {"score": 0, "reasoning": "trivial file write"},
+        "risk": {"score": 0, "reasoning": "no production impact"},
+        "human_judgment": {"score": 0, "reasoning": "deterministic"},
+        "domain_specificity": {"score": 0, "reasoning": "generic"}
+      },
+      "total_score": 0,
+      "recommended_role": "Backend Developer",
+      "owner_type": "ai",
+      "autonomy_level": "autonomous",
+      "reasoning": "One-line file creation"
+    },
+    {
+      "task_id": "TASK-DEMO-002",
+      "scoring": {
+        "complexity": {"score": 0, "reasoning": "copy + append"},
+        "risk": {"score": 0, "reasoning": "no production impact"},
+        "human_judgment": {"score": 0, "reasoning": "deterministic"},
+        "domain_specificity": {"score": 0, "reasoning": "generic"}
+      },
+      "total_score": 0,
+      "recommended_role": "Backend Developer",
+      "owner_type": "ai",
+      "autonomy_level": "autonomous",
+      "reasoning": "Trivial file manipulation"
+    },
+    {
+      "task_id": "TASK-DEMO-003",
+      "scoring": {
+        "complexity": {"score": 0, "reasoning": "append to README"},
+        "risk": {"score": 0, "reasoning": "no production impact"},
+        "human_judgment": {"score": 0, "reasoning": "deterministic"},
+        "domain_specificity": {"score": 0, "reasoning": "generic"}
+      },
+      "total_score": 0,
+      "recommended_role": "Backend Developer",
+      "owner_type": "ai",
+      "autonomy_level": "autonomous",
+      "reasoning": "Trivial markdown append"
+    }
+  ]
+}
