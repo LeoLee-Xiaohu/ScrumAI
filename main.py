@@ -152,6 +152,32 @@ def cmd_watch_kanban(args: argparse.Namespace) -> None:
         sys.exit(1)
 
 
+def cmd_deploy(args: argparse.Namespace) -> None:
+    """Run export-kanban then automatically start watch-kanban."""
+    from mcp_adapter import run_mcp_export, run_mcp_watch
+
+    print("=" * 50)
+    print("Phase 1: Exporting tasks to Vibe Kanban")
+    print("=" * 50)
+    success = run_mcp_export(args)
+    if not success:
+        print("Export failed. Aborting deploy.")
+        sys.exit(1)
+
+    if args.no_watch:
+        print("\nDeploy complete (watcher skipped via --no-watch).")
+        return
+
+    print()
+    print("=" * 50)
+    print("Phase 2: Starting dependency watcher")
+    print("=" * 50)
+    success = run_mcp_watch(args)
+    if not success:
+        print("Watch failed.")
+        sys.exit(1)
+
+
 def cmd_list_prompts(_args: argparse.Namespace) -> None:
     """List all available prompts."""
     prompts_dir = Path(__file__).parent / "prompts"
@@ -181,7 +207,11 @@ Examples:
   uv run main.py dispatch                          Dispatch roles for tasks
   uv run main.py dispatch -f decomposed_task.json  Dispatch with explicit input
   uv run main.py evaluate-dispatch             Evaluate dispatch accuracy
-  uv run main.py export-kanban -d my_dispatch.json --project-name "Your Project Name"
+  uv run main.py export-kanban  --project-name "Your Project Name"   
+  uv run main.py export-kanban -i my_decomposed_task.json -d my_dispatch.json --project-name "Your Project Name"
+  uv run main.py deploy --project-name "Your Project Name"
+  uv run main.py deploy -i my_decomposed_task.json -d my_dispatch.json --project-name "Your Project Name"
+  uv run main.py deploy -i my_decomposed_task.json -d my_dispatch.json --no-watch   Export only, skip watcher
   uv run main.py clear-kanban --project-name "Your Project Name" --yes
   uv run main.py prompts                       List available prompts
         """,
@@ -327,6 +357,41 @@ Examples:
         help="Scan once and exit instead of looping",
     )
     p_watch.set_defaults(func=cmd_watch_kanban)
+
+    # deploy (export-kanban + watch-kanban in one step)
+    p_deploy = subparsers.add_parser(
+        "deploy",
+        help="Export tasks to Vibe Kanban and start the dependency watcher",
+    )
+    p_deploy.add_argument(
+        "-i", "--decomposed", default="decomposed_task.json",
+        help="Input JSON file with original decomposed tasks (default: decomposed_task.json)",
+    )
+    p_deploy.add_argument(
+        "-d", "--dispatched", default="dispatched_task.json",
+        help="Path to dispatched_task.json",
+    )
+    p_deploy.add_argument(
+        "--project-name", default="ScrumAI Project",
+        help="Name of the vibe-kanban project",
+    )
+    p_deploy.add_argument(
+        "--mapping", default="kanban_mapping.json",
+        help="Path to write/read the task_id -> issue_id mapping",
+    )
+    p_deploy.add_argument(
+        "--interval", type=int, default=5,
+        help="Watcher poll interval in seconds (default: 5)",
+    )
+    p_deploy.add_argument(
+        "--once", action="store_true",
+        help="Run watcher once and exit instead of looping",
+    )
+    p_deploy.add_argument(
+        "--no-watch", action="store_true",
+        help="Skip the watcher phase (export only)",
+    )
+    p_deploy.set_defaults(func=cmd_deploy)
 
     # prompts
     p_prompts = subparsers.add_parser("prompts", help="List available prompts")

@@ -742,9 +742,14 @@ def run_mcp_watch(args):
     project_name = mapping.get("project_name", "<unknown>")
     task_to_issue: dict[str, str] = mapping.get("task_to_issue", {})
 
-    if not project_id or not task_to_issue:
-        print(f"Error: mapping file '{mapping_path}' is missing project_id or task_to_issue.")
+    if not project_id:
+        print(f"Error: mapping file '{mapping_path}' is missing project_id.")
         return False
+
+    if not task_to_issue:
+        print(f"No tasks to watch in '{mapping_path}' (task_to_issue is empty).")
+        print("This can happen when all tasks were already exported. Nothing to do.")
+        return True
 
     decomposed_path = getattr(args, "decomposed", None) or mapping.get(
         "decomposed_path", "decomposed_task.json"
