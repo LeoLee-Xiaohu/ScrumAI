@@ -1,0 +1,30 @@
+name: Prompt Lint
+
+on:
+  pull_request:
+    paths:
+      - 'prompts/**'
+      - 'scripts/**'
+  push:
+    branches:
+      - main
+    paths:
+      - 'prompts/**'
+      - 'scripts/**'
+
+jobs:
+  lint:
+    name: Validate Prompt Files
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run prompt linter
+        run: |
+          chmod +x scripts/lint-prompts.sh
+          ./scripts/lint-prompts.sh
+
+      - name: Run lint tests
+        run: |
+          chmod +x scripts/test-lint-prompts.sh
+          ./scripts/test-lint-prompts.sh

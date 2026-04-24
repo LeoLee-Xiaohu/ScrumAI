@@ -1,8 +1,8 @@
 # Scrum AI — Product Requirements Document (PRD)
 
-> **Version:** 0.3
+> **Version:** 0.4
 > **Status:** In Progress
-> **Last Updated:** Feb 28, 2026
+> **Last Updated:** Mar 27, 2026
 
 ---
 
@@ -37,6 +37,7 @@ Scrum AI aims to create a **management-first** interface (board / graph) that ma
 3. **Workflow transparency gap:** black-box autonomy vs. babysitting confirmation — no middle ground.
 4. **Efficiency bottleneck:** single-threaded development — unable to execute multiple tasks concurrently with proper isolation.
 5. **Missing human-AI collaboration:** existing tools focus on individual developers; lack mechanisms for human team collaboration and Scrum workflows.
+6. **Context blindness:** task decomposition without codebase awareness produces generic subtasks that don't reflect real architecture.
 
 ---
 
@@ -50,6 +51,7 @@ Scrum AI aims to create a **management-first** interface (board / graph) that ma
   - blockers requiring human decision,
   - evaluation results.
 - Support **prompt versioning + evaluation** to know whether a prompt change improved outcomes.
+- Enable **context-aware decomposition** by injecting GitHub repository context into the task planning prompt.
 
 ### Non-goals (initial)
 - Solving code merge conflicts / task interference in depth.
@@ -70,7 +72,7 @@ A unit of work with:
 - optional dependencies.
 
 ### 6.2 Role vs Agent
-- **Role** = responsibility/contract (e.g., "Task Decomposer", "QA Evaluator", "Reviewer").
+- **Role** = responsibility/contract (e.g., "Backend Developer", "Reviewer").
 - **Agent** = a runnable worker that performs a role using prompts + tools + skills.
 - **Skill** = a reusable capability or knowledge module that agents can invoke (e.g., "code review", "test generation", "API design").
 - One role may be backed by **multiple agents**, and one agent may implement multiple roles in early stages.
@@ -101,17 +103,26 @@ Scrum workflow context for team collaboration:
 - AI-eligible vs human-required stories classification
 - Human checkpoint definitions
 
+### 6.8 Repository Context
+GitHub repository metadata and code structure injected into task decomposition:
+- Fetched via GitHub API (public and private repos supported)
+- Includes directory tree, key file contents, and source code summaries
+- Enables context-aware, codebase-specific task decomposition
+
 ---
 
 ## 7. Product Roadmap
 
-### Phase 1 — Task Decomposition + Role Dispatch (MVP)
+### Phase 1 — Task Decomposition + Role Dispatch (MVP) ✅
 Intelligent task decomposition and role-based dispatch.
 - User provides a high-level goal
 - System produces a task tree with acceptance criteria (implemented: `decompose` CLI)
+- **Context-aware decomposition**: optionally inject GitHub repo context for codebase-aligned tasks (implemented: `--repo-url`, `--branch`, `--focus-paths` flags)
 - Role dispatch evaluates each task on 4 dimensions and assigns roles + autonomy levels (implemented: `dispatch` CLI)
+- Dispatch evaluation: LLM-as-judge scores accuracy of role assignments (implemented: `evaluate-dispatch` CLI)
 - Issue readiness scoring (implemented: `score` CLI)
 - Interactive brainstorm for requirement clarification (implemented: `brainstorm` CLI)
+- Export dispatched tasks to Vibe Kanban (implemented: `export-kanban` CLI via MCP)
 
 ### Phase 2 — Human-in-the-Loop
 Human approval and guidance integration.
@@ -124,7 +135,8 @@ Human approval and guidance integration.
 Team-style task execution with multiple AI and human agents.
 - Agent execution engine with workspace isolation
 - Sprint context support
-- Pipeline automation (brainstorm → score → decompose → dispatch)
+- Pipeline automation (brainstorm → score → decompose → dispatch → export)
+- Agentic repository retrieval: LLM-driven iterative code exploration for context (vs. current static read)
 
 ---
 
@@ -137,62 +149,88 @@ Team-style task execution with multiple AI and human agents.
 ### 8.2 Task Decomposition (implemented)
 - LLM-powered task splitting from high-level goal into Epic → Stories → Tasks
 - Outputs: subtasks, dependencies, role suggestions, acceptance criteria, execution plan
-- CLI: `python main.py decompose -t "goal"` or `python main.py decompose -f goal.md`
+- CLI: `uv run main.py decompose -t "goal"` or `uv run main.py decompose -f goal.md`
+- Optional repository context: `--repo-url https://github.com/owner/repo --branch main --focus-paths src tests`
 - Output format: `decomposed_task.json`
+- LLM providers: OpenAI-compatible, Google Gemini, MiniMax (via `--provider` flag)
 
 ### 8.3 Task Dispatch & Ownership (implemented)
 Two-step evaluation framework per task:
 - **Step 1 — Delegation scoring**: 4-dimension scoring (Complexity, Risk, Human Judgment, Domain Specificity; 0-2 each, max 8) determines `autonomy_level` (autonomous/supervised/manual) and `owner_type` (ai/human). All 4 dimensions adapted from the AI Task Delegability Framework (Lubars & Tan, NeurIPS 2019): Difficulty→Complexity, Risk→Risk, Trust→Human Judgment, Motivation→Domain Specificity (reframed for agent routing: the paper measures human desire/fit for a task; we measure which specialist agent best fits the task).
-- **Step 2 — Role classification**: Task content matched to one of 6 domain-based roles (3 AI + 3 human), calibrated by few-shot examples from TaskAllocator dataset (Shafiq et al., 2021).
-- CLI: `python main.py dispatch -f decomposed_task.json`
-- Output format: `dispatched_task.json` (eval-only: task_id + scoring + role + autonomy)
+- **Step 2 — Role classification**: Task content matched to one of 6 domain-based roles (3 AI + 3 human), calibrated by few-shot examples from TaskAllocator dataset (Shafiq et al., 2021). Full dataset CSVs and paper PDFs available in `docs/`.
+- CLI: `uv run main.py dispatch -f decomposed_task.json`
+- Output format: `dispatched_task.json`
 
-### 8.4 Status & Visibility
+### 8.4 Dispatch Evaluation (implemented)
+- LLM-as-judge evaluates dispatch results across 5 criteria: owner type accuracy, role precision, delegation score validity, autonomy mapping correctness, reasoning quality
+- CLI: `uv run main.py evaluate-dispatch`
+- Output format: `dispatch_evaluation.json`
+
+### 8.5 Vibe Kanban Integration (implemented)
+- Export dispatched tasks to Vibe Kanban project board via MCP adapter
+- CLI: `uv run main.py export-kanban --project-name "My Project"`
+- Clear exported tasks: `uv run main.py clear-kanban --project-name "My Project" --yes`
+
+### 8.6 Status & Visibility
 - Status states (implemented in code): `todo`, `in_progress`, `blocked`, `done`
 - Future additions: `in_review`, `cancelled`, `failed`
 
-### 8.5 Acceptance & Evaluation
+### 8.7 Acceptance & Evaluation
 - Each task must include acceptance criteria
 - Evaluation methods: LLM judge, automated checks, manual approval
 
-### 8.6 Prompt Management
+### 8.8 Prompt Management
 - Store prompt sets by role
 - Track prompt version per task run
 
 ---
 
-## 9. Non-Functional Requirements
+## 9. LLM Provider Support
 
-### 9.1 Performance
+| Provider | Config | Notes |
+|----------|--------|-------|
+| OpenAI-compatible | `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_MODEL` | Default; supports DeepSeek, Groq, OpenRouter, etc. |
+| Google Gemini | `GEMINI_API_KEY`, `GEMINI_MODEL` | Via `google-genai` SDK |
+| MiniMax | `ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL`, `ANTHROPIC_MODEL` | Via Anthropic-compatible endpoint |
+
+Provider selection: `--provider openai|gemini|minimax` flag, or `LLM_PROVIDER` env var, or auto-detect from available API keys.
+
+---
+
+## 10. Non-Functional Requirements
+
+### 10.1 Performance
 - Fast task decomposition response
 - Real-time status updates
 - Support for concurrent AI tasks
 
-### 9.2 Security
+### 10.2 Security
 - Guard rails to prevent sensitive information exposure
 - Input validation and audit logging
 - Role-based access control
+- GitHub token support for private repository context
 
-### 9.3 Scalability
+### 10.3 Scalability
 - Support multiple projects and teams
 - Efficient storage for large task trees
+- Repository context token limiting (max 50k tokens, truncated at section boundaries)
 
-### 9.4 Reliability
+### 10.4 Reliability
 - Graceful degradation when AI services unavailable
 - Task state persistence
-- Timeout handling for long-running operations
+- Timeout handling for long-running operations (MCP: configurable, LLM: per-provider)
 
 ---
 
-## 10. Data Model
+## 11. Data Model
 
-### 10.1 Task Entity
+### 11.1 Task Entity
 - `task_id` (uuid)
 - `title`
 - `description`
-- `status` (enum)
-- `role` (string: "Frontend Developer", "Backend Developer", "DevOps", "Product Owner", "Scrum Master", "Reviewer")
-- `owner_type` ("human" | "ai")
+- `status` (enum: `todo` | `in_progress` | `blocked` | `done`)
+- `role` (string: `Frontend Developer` | `Backend Developer` | `DevOps` | `Product Owner` | `Scrum Master` | `Reviewer`)
+- `owner_type` (`human` | `ai`)
 - `assignee` (person_id or agent_id)
 - `estimate_hours` (float, optional)
 - `story_points` (int, optional)
@@ -205,7 +243,18 @@ Two-step evaluation framework per task:
 - `evaluation_score` (numeric + rationale)
 - `created_at`, `updated_at`
 
-### 10.2 Role Catalog
+### 11.2 Decomposition Result
+- `epic` (title + description)
+- `reasoning` (chain-of-thought analysis)
+- `stories` (list of Story → Tasks)
+- `execution_plan` (phases, critical path, total hours)
+- `repo_context` (optional: repo_url, branch, fetched_at)
+
+### 11.3 Dispatch Result
+- Per task: `task_id`, `scoring` (4 dimensions), `total_score`, `recommended_role`, `owner_type`, `autonomy_level`, `reasoning`
+- `summary` (overall dispatch overview)
+
+### 11.4 Role Catalog
 
 6 pre-defined roles (Title Case format, matching codebase convention):
 
@@ -229,7 +278,7 @@ Two-step evaluation framework per task:
 
 ---
 
-## 11. UX / UI Requirements
+## 12. UX / UI Requirements
 
 ### MVP UI Components
 1. **Kanban board** with owner badges and status columns
@@ -241,24 +290,26 @@ Two-step evaluation framework per task:
 
 ---
 
-## 12. Acceptance Criteria for MVP Demo
+## 13. Acceptance Criteria for MVP Demo
 
 A successful demo should show:
-1. User submits a high-level goal via CLI
+1. User submits a high-level goal via CLI (with optional repo context)
 2. System generates a **task tree** with role assignments, acceptance criteria, and dependencies (`decompose`)
 3. System evaluates each task and assigns roles with autonomy levels (`dispatch`)
 4. Output clearly distinguishes AI-autonomous, AI-supervised, and human-manual tasks
-5. Future: UI displays task status with at least one **human blocker** task
+5. Tasks can be exported to Vibe Kanban board (`export-kanban`)
+6. Future: UI displays task status with at least one **human blocker** task
 
 ---
 
-## 13. Risks & Open Questions
+## 14. Risks & Open Questions
 
 1. **Dispatch consistency:** LLM-based scoring may vary across runs; calibration via few-shot examples helps but does not guarantee identical results.
 2. **Decomposition threshold:** what metric triggers task splitting?
 3. **Evaluation reliability:** LLM-as-judge bias and repeatability
 4. **Scope creep:** keep MVP focused on core features
 5. **Role vs agent mapping:** how many agents per role, and when to parallelize?
+6. **Repository context relevance:** current static read approach lacks semantic filtering; large repos may exceed token limits or include irrelevant code. Future: agentic retrieval or embedding-based CodeRAG.
 
 ---
 
@@ -274,3 +325,43 @@ A successful demo should show:
 - **Dispatch:** the process of evaluating tasks and assigning roles + autonomy levels
 - **Delegation scoring:** 4-dimension evaluation (Complexity, Risk, Human Judgment, Domain Specificity) to determine autonomy level
 - **Autonomy level:** degree of human oversight (autonomous / supervised / manual)
+- **Repo Context:** GitHub repository structure and code content injected into task decomposition prompts
+- **MCP:** Model Context Protocol — used by the Vibe Kanban adapter for task export
+- **CodeRAG:** Code Retrieval-Augmented Generation — semantic code search to find relevant context for a given task
+
+---
+
+## Appendix B — CLI Reference
+
+```bash
+# Task decomposition
+uv run main.py decompose -t "Build a REST API"
+uv run main.py decompose -f goal.md
+uv run main.py decompose -t "Add OAuth" --repo-url https://github.com/owner/repo
+uv run main.py decompose -t "Add feature" --repo-url owner/repo --branch develop --focus-paths src tests
+
+# Role dispatch
+uv run main.py dispatch
+uv run main.py dispatch -f decomposed_task.json -o dispatched.json
+
+# Dispatch evaluation
+uv run main.py evaluate-dispatch
+uv run main.py evaluate-dispatch -i decomposed_task.json -d dispatched_task.json
+
+# Issue scoring
+uv run main.py score -f ticket.md
+uv run main.py score -t "Build a login page"
+
+# Brainstorm
+uv run main.py brainstorm
+uv run main.py brainstorm -f ticket.md
+
+# Vibe Kanban
+uv run main.py export-kanban --project-name "ScrumAI Project"
+uv run main.py clear-kanban --project-name "ScrumAI Project" --yes
+
+# LLM provider selection
+uv run main.py --provider openai decompose -f goal.md
+uv run main.py --provider gemini decompose -f goal.md
+uv run main.py --provider minimax decompose -f goal.md
+```
