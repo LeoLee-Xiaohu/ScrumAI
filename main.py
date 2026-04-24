@@ -380,8 +380,8 @@ Examples:
         help="Path to write/read the task_id -> issue_id mapping",
     )
     p_deploy.add_argument(
-        "--interval", type=int, default=5,
-        help="Watcher poll interval in seconds (default: 5)",
+        "--interval", type=int, default=1,
+        help="Watcher poll interval in seconds (default: 1)",
     )
     p_deploy.add_argument(
         "--once", action="store_true",
