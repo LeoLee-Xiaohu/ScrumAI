@@ -273,6 +273,10 @@ Examples:
         "export-kanban", help="Export dispatched tasks to Vibe Kanban via MCP"
     )
     p_export.add_argument(
+        "-i", "--decomposed", default="decomposed_task.json",
+        help="Input JSON file with original decomposed tasks (default: decomposed_task.json)",
+    )
+    p_export.add_argument(
         "-d", "--dispatched", default="dispatched_task.json",
         help="Path to dispatched_task.json"
     )
