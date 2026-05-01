@@ -2,15 +2,9 @@ name: Prompt Lint
 
 on:
   pull_request:
-    paths:
-      - 'prompts/**'
-      - 'scripts/**'
   push:
     branches:
       - main
-    paths:
-      - 'prompts/**'
-      - 'scripts/**'
 
 jobs:
   lint:
@@ -18,13 +12,37 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for relevant changes
+        id: filter
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE=${{ github.event.pull_request.base.sha }}
+            HEAD=${{ github.event.pull_request.head.sha }}
+          else
+            BASE=${{ github.event.before }}
+            HEAD=${{ github.sha }}
+          fi
+          CHANGED=$(git diff --name-only "$BASE" "$HEAD" -- 'prompts/' 'scripts/' || true)
+          if [ -n "$CHANGED" ]; then
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+            echo "Changed files in prompts/ or scripts/:"
+            echo "$CHANGED"
+          else
+            echo "relevant=false" >> "$GITHUB_OUTPUT"
+            echo "No changes in prompts/ or scripts/, skipping lint."
+          fi
 
       - name: Run prompt linter
+        if: steps.filter.outputs.relevant == 'true'
         run: |
           chmod +x scripts/lint-prompts.sh
           ./scripts/lint-prompts.sh
 
       - name: Run lint tests
+        if: steps.filter.outputs.relevant == 'true'
         run: |
           chmod +x scripts/test-lint-prompts.sh
           ./scripts/test-lint-prompts.sh
