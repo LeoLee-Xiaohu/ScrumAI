@@ -12,7 +12,7 @@ from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
-MCP_SERVER_CMD = ["npx", "-y", "vibe-kanban@latest", "--mcp"]
+MCP_SERVER_CMD = ["npx", "-y", "vibe-kanban@0.1.43", "--mcp"]
 MCP_CALL_TIMEOUT_SECONDS = 60
 MCP_STARTUP_TIMEOUT_SECONDS = 120
 MCP_RESPONSE_POLL_INTERVAL_SECONDS = 1
@@ -594,6 +594,7 @@ def run_mcp_export(args):
         print(f"Fetching existing tasks in project...")
         existing_tasks = client.list_all_issues(project_id)
         existing_titles = {t.title for t in existing_tasks}
+        existing_title_to_id = {t.title: t.id for t in existing_tasks}
         print(f"Found {len(existing_tasks)} existing tasks")
 
         # Identify which tasks have at-export-time blockers: any dependency
@@ -620,6 +621,9 @@ def run_mcp_export(args):
 
             if title in existing_titles:
                 print(f"Task already exists: {title}")
+                task_id = task.get("task_id")
+                if task_id:
+                    task_id_to_issue_id[task_id] = existing_title_to_id[title]
                 continue
 
             description = format_description(task, dispatch)
