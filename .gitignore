@@ -42,6 +42,8 @@ dispatched_task.json
 score_result.json
 brainstorm_result.json
 dispatch_evaluation.json
+kanban_mapping.json
+*.bak
 
 # Local Tools & Dependencies
 node_modules/
