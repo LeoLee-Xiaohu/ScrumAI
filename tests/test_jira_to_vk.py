@@ -445,3 +445,62 @@ def test_tick_records_to_ledger_on_create() -> None:
         syncer.tick()
 
     assert ledger.vk_status_was_pushed("SCRUM-11", "inprogress")
+
+
+# ----- transient VK-empty guard -----
+
+
+def test_tick_aborts_when_vk_silently_returns_empty_after_seeing_tasks() -> None:
+    """VK MCP returns `{issues: []}` when its backend is unreachable.
+
+    Regression for live-smoke incident where SSH tunnel went down between
+    ticks, MCP returned empty list, and the engine tried to recreate every
+    Jira issue. With history of N>0 bound tasks, an empty tick must abort
+    without firing creates.
+    """
+    issues = [
+        jira_issue("SCRUM-12", "x", "To Do"),
+        jira_issue("SCRUM-13", "y", "In Progress"),
+    ]
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        return make_search_response(issues)
+
+    mcp = FakeMcpClient(
+        issues=[
+            McpIssue(id="vk-12", simple_id="12", title="[SCRUM-12] x", status="todo"),
+            McpIssue(id="vk-13", simple_id="13", title="[SCRUM-13] y", status="inprogress"),
+        ]
+    )
+    with make_jira_client(handler) as jira:
+        syncer = JiraToVkSyncer(
+            jira=jira, mcp=mcp, jira_project_key="SCRUM", vk_project_id="p"
+        )
+        # First tick observes both tasks normally.
+        first = syncer.tick()
+        assert first.errors == 0
+
+        # Simulate VK MCP returning empty (backend unreachable).
+        mcp.issues = []
+        second = syncer.tick()
+
+    assert second.errors == 1
+    assert mcp.created_calls == []  # no mass-recreate
+
+
+def test_tick_allows_empty_vk_on_cold_start() -> None:
+    """First tick against a truly empty VK should still create mirrors."""
+    issues = [jira_issue("SCRUM-14", "x", "To Do")]
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        return make_search_response(issues)
+
+    mcp = FakeMcpClient()  # empty from the start
+    with make_jira_client(handler) as jira:
+        syncer = JiraToVkSyncer(
+            jira=jira, mcp=mcp, jira_project_key="SCRUM", vk_project_id="p"
+        )
+        stats = syncer.tick()
+
+    assert stats.errors == 0
+    assert stats.created == 1
