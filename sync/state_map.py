@@ -1,19 +1,28 @@
 """Bidirectional status mapping between Jira and Vibe Kanban.
 
-Truth source for VK enum: vibe-kanban repo `crates/db/src/models/task.rs`,
-the `TaskStatus` enum (lowercase serialization). The forge type definition in
-`scrumai-forge/src/types/index.ts` (`pending|in_progress|completed|cancelled`)
-is outdated — do NOT use it as a reference.
+VK has two status surfaces:
+- The Rust enum in `crates/db/src/models/task.rs` (TaskStatus, lowercase).
+- The MCP/JSON-RPC wire format on vibe-kanban 0.1.43, which is sentence-case
+  with spaces: `'To do'`, `'In progress'`, `'In review'`, `'Done'`,
+  `'Cancelled'`. `update_issue` *silently ignores* lowercase variants like
+  `'inprogress'` — it returns success but the status doesn't change.
+  Reads always come back in display form.
 
-This module is pure: no I/O, no global state. It exists so jira_to_vk.py and
-vk_to_jira.py share one source of truth for the mapping.
+This module keeps a compact internal canonical form (`todo`, `inprogress`,
+...) for routing logic and exposes:
+- `vk_status_to_display(canonical)` for outbound writes,
+- `normalize_vk_status(raw)` for inbound reads,
+so the syncers can stay unaware of the wire format quirk.
+
+The forge type definition in `scrumai-forge/src/types/index.ts`
+(`pending|in_progress|completed|cancelled`) is outdated — don't use it.
 """
 
 from __future__ import annotations
 
 from typing import Final
 
-# VK TaskStatus enum (lowercase wire format, case-insensitive on input).
+# Canonical internal form (compact, lowercase). Used for routing and ledger keys.
 VK_TODO: Final = "todo"
 VK_INPROGRESS: Final = "inprogress"
 VK_INREVIEW: Final = "inreview"
@@ -23,6 +32,17 @@ VK_CANCELLED: Final = "cancelled"
 VK_STATUSES: Final = frozenset(
     {VK_TODO, VK_INPROGRESS, VK_INREVIEW, VK_DONE, VK_CANCELLED}
 )
+
+# Display form expected on the wire by vibe-kanban 0.1.43. `update_issue` is
+# case-tolerant on first letter ('In Progress' → 'In progress') but does NOT
+# accept the lowercase compact form ('inprogress' silently no-ops).
+VK_DISPLAY: Final[dict[str, str]] = {
+    VK_TODO: "To do",
+    VK_INPROGRESS: "In progress",
+    VK_INREVIEW: "In review",
+    VK_DONE: "Done",
+    VK_CANCELLED: "Cancelled",
+}
 
 # Jira status display names as observed in project SCRUM (2026-05-02 probe).
 JIRA_TODO: Final = "To Do"
@@ -73,9 +93,30 @@ def jira_status_to_vk(jira_status: str) -> str | None:
 def vk_status_to_jira(vk_status: str) -> str | None:
     """Map a VK status to the Jira status display name.
 
-    Input is normalized to lowercase to tolerate case variation from MCP responses.
+    Input is normalized via `normalize_vk_status` to tolerate any wire form
+    (display 'To do', compact 'todo', or camel 'InProgress').
     """
-    return VK_TO_JIRA.get(vk_status.lower())
+    return VK_TO_JIRA.get(normalize_vk_status(vk_status))
+
+
+def normalize_vk_status(raw: str) -> str:
+    """Collapse any VK wire-format status to the canonical compact form.
+
+    Tolerates: 'To do', 'todo', 'TODO', 'In Progress', 'in_progress', 'InProgress'.
+    Returns the input lowercased with spaces and underscores stripped.
+    Unknown values pass through (lowercased) so callers can detect them.
+    """
+    return (raw or "").replace(" ", "").replace("_", "").lower()
+
+
+def vk_status_to_display(canonical: str) -> str | None:
+    """Translate a canonical VK status to the wire display form for `update_issue`.
+
+    Required because vibe-kanban 0.1.43 silently ignores lowercase compact
+    forms — `update_issue(status='inprogress')` returns success but doesn't
+    apply. Display form ('In progress') is what actually sticks.
+    """
+    return VK_DISPLAY.get(canonical)
 
 
 def jira_transition_id(target_status: str) -> str | None:

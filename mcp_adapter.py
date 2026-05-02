@@ -13,7 +13,10 @@ from dataclasses import dataclass
 logger = logging.getLogger(__name__)
 
 MCP_SERVER_CMD = ["npx", "-y", "vibe-kanban@0.1.43", "--mcp"]
-MCP_CALL_TIMEOUT_SECONDS = 60
+# Generous default timeout — the MCP server can route through an SSH tunnel
+# and `list_issues` paginates over 100s of tasks; 60s was too tight in
+# practice and caused spurious timeouts mid-sync.
+MCP_CALL_TIMEOUT_SECONDS = 120
 MCP_STARTUP_TIMEOUT_SECONDS = 120
 MCP_RESPONSE_POLL_INTERVAL_SECONDS = 1
 

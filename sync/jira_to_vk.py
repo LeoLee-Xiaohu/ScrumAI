@@ -29,7 +29,12 @@ from typing import TYPE_CHECKING, cast
 from jira_client import JiraClient, JSONValue
 from mcp_adapter import McpClient, McpIssue
 
-from .state_map import is_syncable_jira_status, jira_status_to_vk
+from .state_map import (
+    is_syncable_jira_status,
+    jira_status_to_vk,
+    normalize_vk_status,
+    vk_status_to_display,
+)
 
 if TYPE_CHECKING:
     from .engine import MirrorLedger
@@ -201,7 +206,12 @@ class JiraToVkSyncer:
     # ----- per-issue handlers -----
 
     def _create_vk(self, snap: JiraIssueSnapshot, target_vk_status: str) -> bool:
-        """Create a fresh VK task. New issues land in `todo`; we transition after."""
+        """Create a fresh VK task. New issues land in `todo`; we transition after.
+
+        Status updates use the display wire form ('In progress' not
+        'inprogress') because vibe-kanban 0.1.43's `update_issue` silently
+        no-ops on the compact form — see state_map.vk_status_to_display.
+        """
         title = make_vk_title(snap.key, snap.summary)
         vk_id = self._mcp.create_issue(
             project_id=self._vk_project_id,
@@ -213,7 +223,8 @@ class JiraToVkSyncer:
             return False
 
         if target_vk_status != "todo":
-            ok = self._mcp.update_issue(issue_id=vk_id, status=target_vk_status)
+            wire_status = vk_status_to_display(target_vk_status) or target_vk_status
+            ok = self._mcp.update_issue(issue_id=vk_id, status=wire_status)
             if not ok:
                 logger.warning(
                     "Created VK task for %s but failed to set status %s",
@@ -250,7 +261,7 @@ class JiraToVkSyncer:
         sync resumes pulls VK back into alignment. VK->Jira sync re-applies
         any genuine VK-side changes that happen *after* this initial reset.
         """
-        raw_status_drift = existing.status.lower() != target_vk_status.lower()
+        raw_status_drift = normalize_vk_status(existing.status) != target_vk_status
         if previous_jira_status is None:
             # Cold start: Jira wins — clobber any VK drift to canonical Jira state.
             status_drift = raw_status_drift
@@ -270,9 +281,12 @@ class JiraToVkSyncer:
         if not (status_drift or title_drift or content_drift):
             return (False, False)
 
+        wire_status: str | None = None
+        if status_drift:
+            wire_status = vk_status_to_display(target_vk_status) or target_vk_status
         ok = self._mcp.update_issue(
             issue_id=existing.id,
-            status=target_vk_status if status_drift else None,
+            status=wire_status,
             title=desired_title if title_drift else None,
             description=snap.description_text if content_drift else None,
         )
@@ -339,7 +353,7 @@ class JiraToVkSyncer:
                 self._ledger is not None
                 and existing is not None
                 and self._ledger.jira_status_was_pushed(snap.key, snap.status_name)
-                and existing.status.lower() == target_vk_status.lower()
+                and normalize_vk_status(existing.status) == target_vk_status
             ):
                 stats.skipped_unchanged += 1
                 self._last_seen_jira[snap.key] = current_sig

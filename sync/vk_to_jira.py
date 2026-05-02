@@ -24,7 +24,7 @@ from jira_client import JiraClient, JSONValue
 from mcp_adapter import McpClient
 
 from .jira_to_vk import parse_jira_key_from_title
-from .state_map import jira_transition_id, vk_status_to_jira
+from .state_map import jira_transition_id, normalize_vk_status, vk_status_to_jira
 
 if TYPE_CHECKING:
     from .engine import MirrorLedger
@@ -103,7 +103,10 @@ class VkToJiraSyncer:
                 continue
             stats.seen_jira_keys.append(jira_key)
 
-            vk_status_lc = (vk.status or "").lower()
+            # Canonical compact form ('inprogress'); tolerates VK 0.1.43's
+            # display wire format ('In progress') as well as the lowercase
+            # Rust enum name ('inprogress') and any test-fixture variant.
+            vk_status_lc = normalize_vk_status(vk.status or "")
             target_jira_status = vk_status_to_jira(vk_status_lc)
             if target_jira_status is None:
                 # VK has a status we don't know how to translate. Don't guess.
