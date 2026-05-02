@@ -208,9 +208,10 @@ def test_tick_creates_then_transitions_for_non_todo_jira_status() -> None:
         syncer.tick()
 
     assert len(mcp.created_calls) == 1
-    # Then a follow-up update_issue to set status=inprogress
+    # Then a follow-up update_issue to set status. VK 0.1.43 wire format
+    # is sentence case ('In progress') — see sync.state_map.VK_DISPLAY.
     assert len(mcp.updated_calls) == 1
-    assert mcp.updated_calls[0]["status"] == "inprogress"
+    assert mcp.updated_calls[0]["status"] == "In progress"
 
 
 def test_tick_skips_backlog_issues() -> None:
@@ -255,7 +256,8 @@ def test_tick_updates_existing_when_jira_status_changes() -> None:
 
     assert stats.updated_status == 1
     assert mcp.created_calls == []
-    assert any(c["status"] == "done" for c in mcp.updated_calls)
+    # Display wire form, not 'done' — see sync.state_map.VK_DISPLAY.
+    assert any(c["status"] == "Done" for c in mcp.updated_calls)
 
 
 def test_tick_updates_title_when_summary_changes() -> None:
