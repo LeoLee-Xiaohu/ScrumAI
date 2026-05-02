@@ -184,6 +184,21 @@ class JiraToVkSyncer:
         # double-count as content_drift, and so we can tell "Jira changed"
         # from "VK drifted" when the two sides disagree.
         self._last_seen_jira_status: dict[str, str] = {}
+        # Last tick's count of VK tasks bound to a Jira key. Used to detect
+        # "VK silently returned empty" — vibe-kanban's MCP server, when its
+        # backend is unreachable (e.g. SSH tunnel down), responds with a
+        # well-formed empty issues list rather than an error. Without this
+        # guard, the syncer would think every Jira issue is new and try to
+        # mass-recreate them. Cold start (count=0) lets legitimate first
+        # runs through. Invariant: NOT reset when the guard aborts a tick —
+        # we keep the previous high-water mark so the next tick re-evaluates
+        # against the same count and an isolated MCP blip can't shift the
+        # bar to 0. Only successful ticks update it (see end of tick()).
+        # Known low-severity false positive: a project legitimately drained
+        # to 0 bound tasks AND immediately followed by transport failure
+        # would also abort here. Operator can clear by restarting the
+        # process; we'd rather over-trigger than mass-recreate.
+        self._last_vk_bound_count: int = 0
 
     # ----- diffing helpers -----
 
@@ -322,6 +337,20 @@ class JiraToVkSyncer:
 
         vk_by_key = self._index_vk_by_key(vk_issues)
 
+        # Sanity guard: VK MCP returns a successful empty list when its
+        # backend is unreachable. If we previously saw bound tasks and now
+        # see none, that's transient connectivity loss — not a wiped
+        # project. Abort before mass-recreating Jira mirrors. On cold start
+        # (_last_vk_bound_count == 0) we proceed normally.
+        if not vk_by_key and self._last_vk_bound_count > 0:
+            logger.error(
+                "VK list returned 0 bound tasks but %d were seen last tick — "
+                "treating as transient MCP/VK failure, skipping create path",
+                self._last_vk_bound_count,
+            )
+            stats.errors += 1
+            return stats
+
         for raw in raw_issues:
             snap = JiraIssueSnapshot.from_search_hit(raw)
             if not snap.key:
@@ -386,5 +415,11 @@ class JiraToVkSyncer:
 
             self._last_seen_jira[snap.key] = current_sig
             self._last_seen_jira_status[snap.key] = snap.status_name
+
+        # Update the bound-count high-water mark only on a tick that actually
+        # observed VK successfully. Decreasing toward 0 is fine (deletions
+        # happen) but going from N>0 to 0 in a single tick is the signature
+        # we guard against above.
+        self._last_vk_bound_count = len(vk_by_key)
 
         return stats
