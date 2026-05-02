@@ -9,6 +9,7 @@ A CLI tool for debugging and testing AI prompts used by the ScrumAI Forge Jira p
 - **Task Decomposition** — Goal → sub-task tree decomposition
 - **Role Dispatch** — AI/Human role assignment using 3-dimension delegation scoring
 - **Dispatch Evaluation** — Evaluate accuracy of role assignments
+- **Jira REST Client** — Local direct-connect Python client for Jira Cloud (mirrors `scrumai-forge/src/lib/jira-client.ts`); enables watchers/HTTP servers in this repo to read+write Jira without round-tripping through Forge.
 
 ## Prerequisites
 
@@ -60,6 +61,37 @@ OPENAI_API_KEY=your_api_key
 OPENAI_BASE_URL=https://api.openai.com/v1  # optional, for custom endpoints
 OPENAI_MODEL=gpt-4o
 ```
+
+### Optional: Jira REST API (for `jira_client.py`)
+
+Required only if you use `jira_client.JiraClient` directly or run the live Jira smoke
+test. The CLI commands above do not need these.
+
+```ini
+JIRA_BASE_URL=https://yoursite.atlassian.net
+JIRA_EMAIL=you@example.com
+JIRA_API_TOKEN=ATATT...
+```
+
+Generate the token at <https://id.atlassian.com/manage-profile/security/api-tokens>.
+Use a **classic** token (starts with `ATATT`); scoped tokens (`ATCTT` prefix) silently
+401 against Jira REST endpoints unless you explicitly grant Jira scopes.
+
+Install dev dependencies and run the test suites:
+
+```bash
+uv sync --extra dev
+
+# Unit tests (offline, mocked HTTP — always run)
+uv run pytest tests/test_jira_client.py
+
+# Live smoke test (real Jira CRUD; gated so it never runs accidentally)
+RUN_JIRA_SMOKE=1 uv run pytest tests/test_jira_smoke.py -v -s
+```
+
+The smoke test creates a sub-task under `SCRUM-27`, comments on it, relabels it,
+and deletes it in the `finally` block. Update `PARENT_KEY` in
+`tests/test_jira_smoke.py` if your project uses a different parent issue.
 
 ## Usage
 
@@ -162,6 +194,10 @@ scrumai-prompts/
 │   └── dispatch_evaluation.py
 ├── client.py             # LLM client (OpenAI-compatible + Google Genai)
 ├── mcp_adapter.py        # Vibe Kanban MCP Client
+├── jira_client.py        # Jira Cloud REST client (Basic Auth, Plan B)
+├── tests/                # pytest suite
+│   ├── test_jira_client.py    # 34 mocked unit tests (no network)
+│   └── test_jira_smoke.py     # live CRUD smoke test (RUN_JIRA_SMOKE=1)
 └── main.py              # CLI entry point
 ```
 
@@ -171,6 +207,39 @@ Pydantic models mirror TypeScript types from `scrumai-forge`:
 - `models/brainstorm.py` ↔ `src/types/brainstorm.ts` + `src/lib/brainstorm-prompts.ts`
 - `models/scoring.py` ↔ `src/lib/issue-scorer.ts`
 - `models/role.py` ↔ Role dispatch framework (Lubars & Tan, 2019)
+- `jira_client.py` ↔ `scrumai-forge/src/lib/jira-client.ts` (REST/Basic Auth instead of Forge `requestJira`)
+
+## Jira Client (Plan B: Local Direct Connect)
+
+`jira_client.py` is a Python port of `scrumai-forge/src/lib/jira-client.ts`. Forge
+runs in Atlassian's sandbox, so its Jira ops can't be reached from outside; this
+client lets the upcoming watcher / HTTP server living in `scrumai-prompts` read
+and write Jira directly via Basic Auth. Forge's own triggers / scheduled jobs
+keep running independently — Forge Storage (issue↔workspace mapping, custom field
+ids, etc.) is **not** mirrored locally.
+
+Quick start:
+
+```python
+from dotenv import load_dotenv
+from jira_client import JiraClient
+
+load_dotenv()
+with JiraClient.from_env() as jira:
+    issue = jira.get_issue("SCRUM-27")
+    jira.add_comment(
+        "SCRUM-27",
+        JiraClient.create_text_comment("Hello from scrumai-prompts."),
+    )
+```
+
+Implemented methods (mirroring `jira-client.ts`): `get_issue`, `get_transitions`,
+`transition_issue`, `add_comment`, `update_custom_field`, `search_issues_by_project`
+(uses `/rest/api/3/search/jql` — the legacy `/search` endpoint was retired by
+Atlassian), `get_active_sprint_id_for_project`, `add_issues_to_sprint`,
+`add_issues_to_active_sprint`, `get_issue_types`, `create_subtask`, `update_labels`,
+plus `delete_issue` (added for tests/cleanup) and the `create_text_comment` ADF
+helper.
 
 ## Prompt Management
 
