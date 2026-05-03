@@ -431,6 +431,88 @@ def test_get_issue_types_returns_list() -> None:
     assert any(t["subtask"] for t in types)
 
 
+# ----- create_issue -----
+
+
+def test_create_issue_happy_path_story() -> None:
+    captured: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/rest/api/3/issue":
+            captured["body"] = json.loads(request.content.decode("utf-8"))
+            return httpx.Response(201, json={"id": "30001", "key": "SCRUM-99"})
+        return httpx.Response(404)
+
+    with make_client(handler) as client:
+        result = client.create_issue(
+            project_key="SCRUM",
+            summary="E2E sync test",
+            description="created by live_e2e",
+            labels=["e2e"],
+        )
+
+    assert result == {"id": "30001", "key": "SCRUM-99"}
+
+    body = captured["body"]
+    assert isinstance(body, dict)
+    fields = body["fields"]
+    assert fields["project"] == {"key": "SCRUM"}
+    # default issue type is Story (passed by name, Jira resolves)
+    assert fields["issuetype"] == {"name": "Story"}
+    assert fields["summary"] == "E2E sync test"
+    assert fields["labels"] == ["e2e"]
+    desc = fields["description"]
+    assert desc["type"] == "doc"
+    assert desc["content"][0]["content"][0]["text"] == "created by live_e2e"
+
+
+def test_create_issue_omits_optional_fields() -> None:
+    captured: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/rest/api/3/issue":
+            captured["body"] = json.loads(request.content.decode("utf-8"))
+            return httpx.Response(201, json={"id": "1", "key": "PROJ-1"})
+        return httpx.Response(404)
+
+    with make_client(handler) as client:
+        client.create_issue(project_key="PROJ", summary="bare")
+
+    body = captured["body"]
+    assert isinstance(body, dict)
+    fields = body["fields"]
+    assert "description" not in fields
+    assert "labels" not in fields
+
+
+def test_create_issue_custom_type_name() -> None:
+    captured: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/rest/api/3/issue":
+            captured["body"] = json.loads(request.content.decode("utf-8"))
+            return httpx.Response(201, json={"id": "1", "key": "PROJ-1"})
+        return httpx.Response(404)
+
+    with make_client(handler) as client:
+        client.create_issue(
+            project_key="PROJ", summary="t", issue_type_name="Task"
+        )
+
+    body = captured["body"]
+    assert isinstance(body, dict)
+    assert body["fields"]["issuetype"] == {"name": "Task"}
+
+
+def test_create_issue_raises_on_400() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(400, text='{"errorMessages":["bad type"]}')
+
+    with make_client(handler) as client, pytest.raises(JiraClientError) as excinfo:
+        client.create_issue("PROJ", "x", issue_type_name="Bogus")
+    assert excinfo.value.status_code == 400
+
+
 # ----- create_subtask -----
 
 
