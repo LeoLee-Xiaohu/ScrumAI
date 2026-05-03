@@ -222,6 +222,66 @@ def test_tick_records_error_on_jira_get_failure() -> None:
     assert stats.transitioned == 0
 
 
+def test_tick_does_not_cache_vk_status_on_transition_failure() -> None:
+    """A failed `transition_issue` must not poison `_last_seen_vk_status`.
+
+    Symmetric to the Jira->VK fix in jira_to_vk: if we cache after a failed
+    write, the fast-path skip on the next tick (`previous == vk_status_lc`)
+    silently swallows the drift forever. The current implementation skips
+    cache update on the exception path; this test pins that contract so a
+    refactor can't silently regress it.
+    """
+    transition_attempts: list[int] = []
+    recorder_status = {"SCRUM-90": "To Do"}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path.startswith("/rest/api/3/issue/") and request.method == "GET":
+            tail = path[len("/rest/api/3/issue/"):]
+            if "/" not in tail:
+                return httpx.Response(
+                    200,
+                    json={
+                        "key": tail,
+                        "fields": {
+                            "status": {"name": recorder_status.get(tail, "To Do")},
+                        },
+                    },
+                )
+        if path.endswith("/transitions") and request.method == "POST":
+            transition_attempts.append(1)
+            # Fail the first attempt, succeed the second.
+            if len(transition_attempts) == 1:
+                return httpx.Response(500, text="boom")
+            return httpx.Response(204)
+        return httpx.Response(404, text=f"unexpected: {request.method} {path}")
+
+    mcp = FakeMcpClient(
+        issues=[
+            McpIssue(
+                id="vk-90", simple_id="90", title="[SCRUM-90] x", status="inprogress"
+            )
+        ]
+    )
+    with make_jira_client(handler) as jira:
+        syncer = VkToJiraSyncer(jira=jira, mcp=mcp, vk_project_id="p")
+
+        # Tick 1: transition POST fails — error counted, cache untouched.
+        first = syncer.tick()
+        assert first.errors == 1
+        assert first.transitioned == 0
+        assert len(transition_attempts) == 1
+
+        # Tick 2: VK still 'inprogress', Jira still 'To Do'. Without the
+        # cache-discipline fix the syncer would skip via the
+        # `previous == vk_status_lc` fast path. With it, we retry.
+        second = syncer.tick()
+
+    assert second.errors == 0
+    assert second.transitioned == 1
+    assert len(transition_attempts) == 2
+
+
 # ----- ledger anti-loop -----
 
 
