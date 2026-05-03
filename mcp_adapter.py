@@ -13,7 +13,10 @@ from dataclasses import dataclass
 logger = logging.getLogger(__name__)
 
 MCP_SERVER_CMD = ["npx", "-y", "vibe-kanban@0.1.43", "--mcp"]
-MCP_CALL_TIMEOUT_SECONDS = 60
+# Generous default timeout — the MCP server can route through an SSH tunnel
+# and `list_issues` paginates over 100s of tasks; 60s was too tight in
+# practice and caused spurious timeouts mid-sync.
+MCP_CALL_TIMEOUT_SECONDS = 120
 MCP_STARTUP_TIMEOUT_SECONDS = 120
 MCP_RESPONSE_POLL_INTERVAL_SECONDS = 1
 
@@ -282,6 +285,17 @@ class McpClient:
         limit: int = 100,
         offset: int = 0,
     ) -> list[McpIssue]:
+        """Fetch one page of VK issues. Raises on transport/MCP failures.
+
+        Returns `[]` only for legitimate empty responses (project has no
+        issues at this offset). Hard failures propagate as exceptions so
+        callers can distinguish "really empty" from "we don't know":
+          - call_tool transport exception (connection, timeout)
+          - missing or non-text content block (`RuntimeError`)
+          - non-JSON text payload (`json.JSONDecodeError` from json.loads)
+        The sync engine relies on this distinction to avoid recreating
+        Jira-mirrored VK tasks when the MCP server is slow/down.
+        """
         params = {
             "project_id": project_id,
             "limit": limit,
@@ -290,23 +304,24 @@ class McpClient:
         if status:
             params["status"] = status
 
-        try:
-            result = self.call_tool("list_issues", params)
-            content = result.get("content", [])
-            if content and content[0].get("type") == "text":
-                data = json.loads(content[0]["text"])
-                return [McpIssue(
-                    id=i["id"],
-                    simple_id=i.get("simple_id", ""),
-                    title=i["title"],
-                    status=i["status"],
-                    priority=i.get("priority")
-                ) for i in data.get("issues", [])]
-        except Exception as e:
-            logger.warning(f"Failed to list issues: {e}")
-        return []
+        result = self.call_tool("list_issues", params)
+        content = result.get("content", [])
+        if not content or content[0].get("type") != "text":
+            raise RuntimeError(
+                f"list_issues for project {project_id} returned malformed "
+                f"response (no text content): {result!r}"
+            )
+        data = json.loads(content[0]["text"])
+        return [McpIssue(
+            id=i["id"],
+            simple_id=i.get("simple_id", ""),
+            title=i["title"],
+            status=i["status"],
+            priority=i.get("priority")
+        ) for i in data.get("issues", [])]
 
     def list_all_issues(self, project_id: str, status: str = None, page_size: int = 100) -> list[McpIssue]:
+        """Paginate through all VK issues. Propagates list_issues exceptions."""
         issues: list[McpIssue] = []
         offset = 0
 

@@ -309,6 +309,49 @@ class JiraClient:
         self._raise_for_status(response, "Failed to get issue types")
         return cast(list[dict[str, JSONValue]], response.json())
 
+    def create_issue(
+        self,
+        project_key: str,
+        summary: str,
+        *,
+        issue_type_name: str = "Story",
+        description: Optional[str] = None,
+        labels: Optional[list[str]] = None,
+    ) -> dict[str, str]:
+        """Create a top-level (non-subtask) issue in `project_key`.
+
+        Not present in jira-client.ts but needed for tests and programmatic
+        issue creation. `issue_type_name` is passed by name; Jira resolves it
+        against the project's configured types and rejects unknown names with
+        400. Returns {'id', 'key'}.
+        """
+        fields: dict[str, JSONValue] = {
+            "project": {"key": project_key},
+            "issuetype": {"name": issue_type_name},
+            "summary": summary,
+        }
+        if description:
+            fields["description"] = cast(
+                JSONValue, self.create_text_comment(description)
+            )
+        if labels:
+            fields["labels"] = list(labels)
+
+        response = self._client.post(
+            "/rest/api/3/issue", json={"fields": fields}
+        )
+        self._raise_for_status(
+            response, f"Failed to create {issue_type_name} in {project_key}"
+        )
+        created = cast(dict[str, JSONValue], response.json())
+        new_id = created.get("id")
+        new_key = created.get("key")
+        if not isinstance(new_id, str) or not isinstance(new_key, str):
+            raise JiraClientError(
+                f"Issue creation response missing id/key: {created}"
+            )
+        return {"id": new_id, "key": new_key}
+
     def create_subtask(
         self,
         parent_key: str,

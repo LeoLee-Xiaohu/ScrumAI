@@ -178,6 +178,65 @@ def cmd_deploy(args: argparse.Namespace) -> None:
         sys.exit(1)
 
 
+def cmd_sync(args: argparse.Namespace) -> None:
+    """Run the bidirectional Jira <-> Vibe Kanban sync engine."""
+    from dotenv import load_dotenv
+
+    from jira_client import JiraClient
+    from mcp_adapter import McpClient
+    from sync.engine import SyncEngine
+
+    load_dotenv()
+
+    jira = JiraClient.from_env()
+    mcp = McpClient()
+
+    try:
+        # Resolve VK project id by name (consistent with export-kanban).
+        organizations = mcp.list_organizations()
+        if not organizations:
+            print(
+                "Error: no Vibe Kanban organizations visible. "
+                "Confirm the MCP tunnel + port file are set up."
+            )
+            sys.exit(1)
+
+        org = organizations[0]
+        projects = mcp.list_projects(org.id)
+        target = next((p for p in projects if p.name == args.vk_project_name), None)
+        if target is None:
+            print(
+                f"Error: VK project {args.vk_project_name!r} not found. "
+                f"Available: {[p.name for p in projects]}"
+            )
+            sys.exit(1)
+
+        engine = SyncEngine(
+            jira=jira,
+            mcp=mcp,
+            jira_project_key=args.jira_project_key,
+            vk_project_id=target.id,
+            interval_seconds=args.interval,
+        )
+
+        if args.once:
+            report = engine.tick()
+            logger.info(
+                "single tick: j2v(created=%d updated=%d errors=%d) "
+                "v2j(transitioned=%d errors=%d)",
+                report.jira_to_vk_created,
+                report.jira_to_vk_updated,
+                report.jira_to_vk_errors,
+                report.vk_to_jira_transitioned,
+                report.vk_to_jira_errors,
+            )
+        else:
+            engine.run_loop()
+    finally:
+        mcp.close()
+        jira.close()
+
+
 def cmd_list_prompts(_args: argparse.Namespace) -> None:
     """List all available prompts."""
     prompts_dir = Path(__file__).parent / "prompts"
@@ -392,6 +451,31 @@ Examples:
         help="Skip the watcher phase (export only)",
     )
     p_deploy.set_defaults(func=cmd_deploy)
+
+    # sync (Jira <-> Vibe Kanban bidirectional)
+    p_sync = subparsers.add_parser(
+        "sync",
+        help="Bidirectional Jira <-> Vibe Kanban sync (status mirror, anti-loop)",
+    )
+    p_sync.add_argument(
+        "--jira-project-key",
+        default="SCRUM",
+        help="Jira project key to sync (default: SCRUM)",
+    )
+    p_sync.add_argument(
+        "--vk-project-name",
+        default="Initial Project",
+        help="Vibe Kanban project name to mirror to (default: 'Initial Project')",
+    )
+    p_sync.add_argument(
+        "--interval", type=float, default=30.0,
+        help="Polling interval in seconds (default: 30)",
+    )
+    p_sync.add_argument(
+        "--once", action="store_true",
+        help="Run a single tick and exit (useful for smoke-testing).",
+    )
+    p_sync.set_defaults(func=cmd_sync)
 
     # prompts
     p_prompts = subparsers.add_parser("prompts", help="List available prompts")
