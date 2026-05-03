@@ -223,6 +223,13 @@ class JiraToVkSyncer:
     def _create_vk(self, snap: JiraIssueSnapshot, target_vk_status: str) -> bool:
         """Create a fresh VK task. New issues land in `todo`; we transition after.
 
+        Returns False if either the create OR the post-create status update
+        fails. The partial-failure case (issue created, status set failed)
+        is intentionally surfaced as an error so the caller skips caching
+        Jira state — the next tick re-enters the cold-start path
+        (existing != None, previous_jira_status is None ⇒ Jira wins) and
+        reconciles the stranded `todo` status.
+
         Status updates use the display wire form ('In progress' not
         'inprogress') because vibe-kanban 0.1.43's `update_issue` silently
         no-ops on the compact form — see state_map.vk_status_to_display.
@@ -241,10 +248,12 @@ class JiraToVkSyncer:
             wire_status = vk_status_to_display(target_vk_status) or target_vk_status
             ok = self._mcp.update_issue(issue_id=vk_id, status=wire_status)
             if not ok:
-                logger.warning(
-                    "Created VK task for %s but failed to set status %s",
+                logger.error(
+                    "Created VK task for %s but failed to set status %s; "
+                    "next tick will retry via cold-start",
                     snap.key, target_vk_status,
                 )
+                return False
         return True
 
     def _update_vk(
@@ -254,8 +263,14 @@ class JiraToVkSyncer:
         target_vk_status: str,
         previous_signature: tuple[str, str] | None,
         previous_jira_status: str | None,
-    ) -> tuple[bool, bool]:
-        """Patch a VK task to match Jira state. Returns (status_changed, content_changed).
+    ) -> tuple[bool, bool] | None:
+        """Patch a VK task to match Jira state.
+
+        Returns:
+            (status_changed, content_changed) on success or no-op,
+            None if the MCP `update_issue` call itself failed — caller
+            must NOT cache Jira state in that case so the next tick
+            retries against the same drift.
 
         Strategy:
         - Status: compare existing.status (lowercase) to target. With
@@ -307,7 +322,7 @@ class JiraToVkSyncer:
         )
         if not ok:
             logger.error("update_issue failed for %s (vk_id=%s)", snap.key, existing.id)
-            return (False, False)
+            return None
 
         return (status_drift, title_drift or content_drift)
 
@@ -394,15 +409,26 @@ class JiraToVkSyncer:
                     stats.created += 1
                     if self._ledger is not None:
                         self._ledger.record_pushed_to_vk(snap.key, target_vk_status)
+                    # Cache only on full success: a partial-create failure
+                    # (issue created but status update failed) returns False
+                    # and we want the next tick's cold-start path to reconcile.
+                    self._last_seen_jira[snap.key] = current_sig
+                    self._last_seen_jira_status[snap.key] = snap.status_name
                 else:
                     stats.errors += 1
-                self._last_seen_jira[snap.key] = current_sig
-                self._last_seen_jira_status[snap.key] = snap.status_name
                 continue
 
-            status_changed, content_changed = self._update_vk(
+            result = self._update_vk(
                 existing, snap, target_vk_status, previous_sig, previous_status
             )
+            if result is None:
+                # MCP write failed — count as error and skip caching so the
+                # next tick retries the same drift instead of falsely
+                # treating Jira state as already mirrored.
+                stats.errors += 1
+                continue
+
+            status_changed, content_changed = result
             if status_changed:
                 stats.updated_status += 1
             if content_changed:

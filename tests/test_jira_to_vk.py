@@ -504,3 +504,110 @@ def test_tick_allows_empty_vk_on_cold_start() -> None:
 
     assert stats.errors == 0
     assert stats.created == 1
+
+
+# ----- write-failure cache discipline (P1 regressions from PR #19 review) -----
+
+
+def test_tick_does_not_cache_jira_state_on_update_failure() -> None:
+    """A failed `update_issue` must not poison the cache.
+
+    Prior bug: `_update_vk` returned (False, False) on transport error, the
+    caller treated that as "no drift" and cached the current Jira state. On
+    the next tick — even with MCP recovered — `previous_jira_status` already
+    matched `snap.status_name`, so the established-baseline branch
+    (jira_status_changed == False) suppressed the retry and the drift was
+    silently ignored forever.
+
+    Fix contract: `_update_vk` returns None on failure; caller increments
+    errors and skips caching. Next tick re-enters the same drift path and
+    succeeds.
+    """
+    issues = [jira_issue("SCRUM-50", "Body", "In Progress")]
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        return make_search_response(issues)
+
+    mcp = FakeMcpClient(
+        issues=[
+            McpIssue(
+                id="vk-50",
+                simple_id="50",
+                title="[SCRUM-50] Body",
+                status="todo",  # drift vs Jira "In Progress"
+            )
+        ],
+        update_should_fail=True,
+    )
+    with make_jira_client(handler) as jira:
+        syncer = JiraToVkSyncer(
+            jira=jira, mcp=mcp, jira_project_key="SCRUM", vk_project_id="p"
+        )
+
+        # Tick 1: write fails — error counted, cache untouched.
+        first = syncer.tick()
+        assert first.errors == 1
+        assert first.updated_status == 0
+        # update_issue was attempted exactly once.
+        assert len(mcp.updated_calls) == 1
+
+        # MCP recovers.
+        mcp.update_should_fail = False
+
+        # Tick 2: same Jira state, same VK drift — must retry, not skip.
+        second = syncer.tick()
+
+    assert second.errors == 0
+    assert second.updated_status == 1
+    # Now two update attempts total: the failed one + the successful retry.
+    assert len(mcp.updated_calls) == 2
+    assert mcp.updated_calls[-1]["status"] == "In progress"
+
+
+def test_tick_does_not_cache_jira_state_on_partial_create_failure() -> None:
+    """`_create_vk` partial failure (created, status set failed) must retry.
+
+    Prior bug: when create succeeded but the follow-up status update failed,
+    `_create_vk` returned True. The caller then cached Jira state. The next
+    tick saw the stranded `todo` VK task, but the established-baseline
+    `_update_vk` branch said "Jira hasn't moved" and skipped — leaving the
+    VK task permanently in `todo`.
+
+    Fix contract: partial create returns False; caller increments errors and
+    skips caching. Next tick takes the cold-start path
+    (previous_jira_status is None ⇒ Jira wins) and reconciles the status.
+    """
+    issues = [jira_issue("SCRUM-51", "WIP body", "In Progress")]
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        return make_search_response(issues)
+
+    mcp = FakeMcpClient(update_should_fail=True)
+    with make_jira_client(handler) as jira:
+        syncer = JiraToVkSyncer(
+            jira=jira, mcp=mcp, jira_project_key="SCRUM", vk_project_id="p"
+        )
+
+        # Tick 1: create succeeds; the follow-up status update fails.
+        first = syncer.tick()
+        assert first.errors == 1
+        assert first.created == 0  # partial failure does not count as created
+        assert len(mcp.created_calls) == 1
+        assert len(mcp.updated_calls) == 1  # the failed status patch
+        # Verify the VK task exists but is stranded in todo.
+        assert len(mcp.issues) == 1
+        assert mcp.issues[0].status == "todo"
+
+        # MCP recovers.
+        mcp.update_should_fail = False
+
+        # Tick 2: cold-start path reconciles — Jira wins, VK gets pushed.
+        second = syncer.tick()
+
+    assert second.errors == 0
+    assert second.updated_status == 1
+    # No second create attempt — the existing VK task is reused.
+    assert len(mcp.created_calls) == 1
+    # The reconciliation update is the third update_issue call overall.
+    assert len(mcp.updated_calls) == 2
+    assert mcp.updated_calls[-1]["status"] == "In progress"
