@@ -451,6 +451,38 @@ def cmd_deploy(args: argparse.Namespace) -> None:
         sys.exit(1)
 
 
+def cmd_serve(args: argparse.Namespace) -> None:
+    """Run the FastAPI HTTP API server on top of the sync engine.
+
+    Reads SCRUMAI_API_KEY from env (empty means no auth — fine for local
+    dev, set a real value when deploying behind nginx).
+    """
+    import os
+
+    from dotenv import load_dotenv
+
+    from sync.server import run_server
+
+    # Load .env BEFORE reading the API key — otherwise a key supplied via
+    # the project's .env file is invisible here and the server would start
+    # with auth silently disabled. run_server() also calls load_dotenv(),
+    # which is idempotent.
+    load_dotenv()
+
+    api_key = os.environ.get("SCRUMAI_API_KEY", "")
+
+    run_server(
+        host=args.host,
+        port=args.port,
+        jira_project_key=args.jira_project_key,
+        vk_project_name=args.vk_project_name,
+        api_key=api_key,
+        hot_interval=args.hot_interval,
+        cold_interval=args.cold_interval,
+        hot_window=args.hot_window,
+    )
+
+
 def cmd_sync(args: argparse.Namespace) -> None:
     """Run the bidirectional Jira <-> Vibe Kanban sync engine."""
     from dotenv import load_dotenv
@@ -927,6 +959,41 @@ Examples:
         help="Run a single tick and exit (useful for smoke-testing).",
     )
     p_sync.set_defaults(func=cmd_sync)
+
+    # serve (HTTP API on top of the sync engine)
+    p_serve = subparsers.add_parser(
+        "serve",
+        help="Run the FastAPI HTTP API for Forge-triggered sync",
+    )
+    p_serve.add_argument(
+        "--host", default="127.0.0.1",
+        help="Bind address (default: 127.0.0.1; nginx reverse-proxies).",
+    )
+    p_serve.add_argument(
+        "--port", type=int, default=8000,
+        help="Bind port (default: 8000).",
+    )
+    p_serve.add_argument(
+        "--jira-project-key", default="SCRUM",
+        help="Jira project key to sync (default: SCRUM).",
+    )
+    p_serve.add_argument(
+        "--vk-project-name", default="Initial Project",
+        help="VK project name to mirror (default: 'Initial Project').",
+    )
+    p_serve.add_argument(
+        "--hot-interval", type=float, default=30.0,
+        help="Polling interval (seconds) when recently active (default: 30).",
+    )
+    p_serve.add_argument(
+        "--cold-interval", type=float, default=300.0,
+        help="Polling interval (seconds) when idle (default: 300).",
+    )
+    p_serve.add_argument(
+        "--hot-window", type=float, default=3600.0,
+        help="Stay hot for this many seconds after the last write (default: 3600).",
+    )
+    p_serve.set_defaults(func=cmd_serve)
 
     # prompts
     p_prompts = subparsers.add_parser("prompts", help="List available prompts")
