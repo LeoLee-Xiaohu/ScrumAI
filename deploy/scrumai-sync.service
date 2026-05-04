@@ -1,0 +1,53 @@
+# scrumai-sync systemd unit
+#
+# Install:
+#   sudo cp deploy/scrumai-sync.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now scrumai-sync
+#
+# Logs:
+#   journalctl -u scrumai-sync -f
+#
+# The service is bound to 127.0.0.1:8000. Public access is provided by the
+# nginx vhost in deploy/scrumai.oldcai.com.nginx.conf, which terminates TLS
+# and reverse-proxies onto this loopback port.
+
+[Unit]
+Description=ScrumAI Jira <-> Vibe Kanban sync API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=scrumai
+Group=scrumai
+WorkingDirectory=/opt/scrumai/scrumai-prompts
+
+# All secrets (JIRA_*, VIBE_*, SCRUMAI_API_KEY) live in this file. Mode 0640
+# owned root:scrumai (root writes; the service user reads via group). See
+# deploy/README.md step 3 for the exact install command.
+EnvironmentFile=/etc/scrumai/sync.env
+
+# uv resolves the project venv at .venv. `uv run` ensures we pick up the
+# right interpreter even if the system Python changes.
+ExecStart=/usr/local/bin/uv run python main.py serve \
+    --host 127.0.0.1 \
+    --port 8000 \
+    --jira-project-key SCRUM \
+    --vk-project-name "Initial Project" \
+    --hot-interval 30 \
+    --cold-interval 300 \
+    --hot-window 3600
+
+Restart=on-failure
+RestartSec=5s
+
+# Soft hardening — this is a demo box but cheap defaults still help.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/scrumai
+
+[Install]
+WantedBy=multi-user.target

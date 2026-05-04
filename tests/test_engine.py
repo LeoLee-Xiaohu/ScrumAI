@@ -275,3 +275,174 @@ def test_engine_anti_loop_vk_to_jira_then_jira_to_vk_doesnt_bounce() -> None:
         assert echo.jira_to_vk_updated == 0
         assert echo.vk_to_jira_transitioned == 0
         assert echo.total_writes() == 0
+
+
+# ----- adaptive polling -----
+
+
+def test_next_interval_seconds_cold_when_no_writes() -> None:
+    """Fresh engine with no writes -> cold interval.
+
+    Cold-start treats "never written" as cold so we don't spam APIs in a
+    quiet project. Hot-cadence kicks in only after observed activity.
+    """
+    handler = make_jira_search_handler([])
+    mcp = FakeMcpClient()
+    with make_jira_client(handler) as jira:
+        engine = SyncEngine(
+            jira=jira, mcp=mcp,
+            jira_project_key="SCRUM", vk_project_id="p",
+            hot_interval_seconds=30.0,
+            cold_interval_seconds=300.0,
+            hot_window_seconds=3600.0,
+        )
+
+    assert engine.last_write_at is None
+    assert engine.next_interval_seconds() == 300.0
+
+
+def test_next_interval_seconds_hot_after_recent_write() -> None:
+    """A successful write flips the next interval to hot."""
+    issues = [
+        {
+            "key": "SCRUM-1",
+            "fields": {
+                "summary": "x", "status": {"name": "To Do"}, "description": None,
+            },
+        }
+    ]
+    handler = make_jira_search_handler(issues)
+    mcp = FakeMcpClient()
+    with make_jira_client(handler) as jira:
+        engine = SyncEngine(
+            jira=jira, mcp=mcp,
+            jira_project_key="SCRUM", vk_project_id="p",
+            hot_interval_seconds=30.0,
+            cold_interval_seconds=300.0,
+            hot_window_seconds=3600.0,
+        )
+        report = engine.tick()
+
+    assert report.jira_to_vk_created == 1
+    assert engine.last_write_at is not None
+    assert engine.next_interval_seconds() == 30.0
+
+
+def test_next_interval_seconds_cold_after_window_expired() -> None:
+    """Past hot_window_seconds since last write -> cold again.
+
+    Simulated by hand-setting `_last_write_at` to a past monotonic value.
+    Beats the brittleness of sleeping in the test.
+    """
+    handler = make_jira_search_handler([])
+    mcp = FakeMcpClient()
+    with make_jira_client(handler) as jira:
+        engine = SyncEngine(
+            jira=jira, mcp=mcp,
+            jira_project_key="SCRUM", vk_project_id="p",
+            hot_interval_seconds=30.0,
+            cold_interval_seconds=300.0,
+            hot_window_seconds=3600.0,
+        )
+        # 2 hours ago — well past the 1-hour hot window.
+        engine._last_write_at = time.monotonic() - 7200.0
+
+    assert engine.next_interval_seconds() == 300.0
+
+
+def test_idle_tick_does_not_advance_last_write_at() -> None:
+    """Tick with zero writes leaves the timestamp untouched.
+
+    Otherwise repeated empty ticks would keep the loop hot forever.
+    """
+    handler = make_jira_search_handler([])
+    mcp = FakeMcpClient()
+    with make_jira_client(handler) as jira:
+        engine = SyncEngine(
+            jira=jira, mcp=mcp,
+            jira_project_key="SCRUM", vk_project_id="p",
+            hot_interval_seconds=30.0,
+            cold_interval_seconds=300.0,
+        )
+        report = engine.tick()
+
+    assert report.total_writes() == 0
+    assert engine.last_write_at is None
+
+
+# ----- tick_for_key orchestration -----
+
+
+def test_tick_for_key_routes_to_targeted_syncers() -> None:
+    """tick_for_key calls jira.get_issue (not /search/jql) for the targeted key."""
+    get_issue_calls: list[str] = []
+    search_calls: list[str] = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        if req.url.path == "/rest/api/3/search/jql":
+            search_calls.append(req.url.path)
+            return httpx.Response(200, json={"issues": []})
+        if req.url.path.startswith("/rest/api/3/issue/") and req.method == "GET":
+            tail = req.url.path[len("/rest/api/3/issue/"):]
+            if "/" not in tail:
+                get_issue_calls.append(tail)
+                return httpx.Response(
+                    200,
+                    json={
+                        "key": tail,
+                        "fields": {
+                            "summary": "x",
+                            "status": {"name": "To Do"},
+                            "description": None,
+                        },
+                    },
+                )
+        return httpx.Response(404)
+
+    mcp = FakeMcpClient()
+    with make_jira_client(handler) as jira:
+        engine = SyncEngine(
+            jira=jira, mcp=mcp,
+            jira_project_key="SCRUM", vk_project_id="p",
+            interval_seconds=0.01,
+        )
+        report = engine.tick_for_key("SCRUM-500")
+
+    # Jira->VK side fetched directly (no search), then VK->Jira saw the
+    # newly created VK task and skipped (Jira already in 'To Do').
+    assert get_issue_calls == ["SCRUM-500"]
+    assert search_calls == []
+    assert report.jira_to_vk_created == 1
+
+
+def test_tick_for_key_updates_last_write_at_on_create() -> None:
+    """A successful targeted create must flip the engine to hot mode too."""
+    def handler(req: httpx.Request) -> httpx.Response:
+        if req.url.path == "/rest/api/3/issue/SCRUM-501" and req.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "key": "SCRUM-501",
+                    "fields": {
+                        "summary": "x",
+                        "status": {"name": "To Do"},
+                        "description": None,
+                    },
+                },
+            )
+        return httpx.Response(404)
+
+    mcp = FakeMcpClient()
+    with make_jira_client(handler) as jira:
+        engine = SyncEngine(
+            jira=jira, mcp=mcp,
+            jira_project_key="SCRUM", vk_project_id="p",
+            hot_interval_seconds=30.0,
+            cold_interval_seconds=300.0,
+        )
+        assert engine.last_write_at is None
+        report = engine.tick_for_key("SCRUM-501")
+
+    assert report.jira_to_vk_created == 1
+    assert engine.last_write_at is not None
+    assert engine.next_interval_seconds() == 30.0

@@ -328,6 +328,92 @@ class JiraToVkSyncer:
 
     # ----- public driver -----
 
+    def _sync_one(
+        self,
+        snap: JiraIssueSnapshot,
+        vk_by_key: dict[str, McpIssue],
+        stats: SyncStats,
+    ) -> None:
+        """Apply create/update/skip logic for a single Jira issue.
+
+        Shared between full-sweep `tick()` and targeted `tick_for_key()`.
+        Mutates `stats` and the in-memory caches; the caller is responsible
+        for fetching `snap` and providing the VK index.
+        """
+        if not snap.key:
+            return
+        stats.seen_jira_keys.append(snap.key)
+
+        if not is_syncable_jira_status(snap.status_name):
+            # Backlog or unmapped — leave alone. Don't cache, so a later
+            # transition out of Backlog re-enters the create path cleanly.
+            stats.skipped_unsupported += 1
+            return
+
+        target_vk_status = jira_status_to_vk(snap.status_name)
+        if target_vk_status is None:
+            # Defensive: is_syncable_jira_status already gates this, but
+            # if state_map is mid-edit we don't want to crash.
+            stats.skipped_unsupported += 1
+            return
+
+        existing = vk_by_key.get(snap.key)
+        previous_sig = self._last_seen_jira.get(snap.key)
+        previous_status = self._last_seen_jira_status.get(snap.key)
+        current_sig = snap.signature()
+
+        # Anti-loop: if we just transitioned Jira from VK->Jira, the
+        # status we're now reading on the Jira side is our own echo.
+        # Don't bounce it back through to VK — VK already has that state.
+        if (
+            self._ledger is not None
+            and existing is not None
+            and self._ledger.jira_status_was_pushed(snap.key, snap.status_name)
+            and normalize_vk_status(existing.status) == target_vk_status
+        ):
+            stats.skipped_unchanged += 1
+            self._last_seen_jira[snap.key] = current_sig
+            self._last_seen_jira_status[snap.key] = snap.status_name
+            return
+
+        if existing is None:
+            if self._create_vk(snap, target_vk_status):
+                stats.created += 1
+                if self._ledger is not None:
+                    self._ledger.record_pushed_to_vk(snap.key, target_vk_status)
+                # Cache only on full success: a partial-create failure
+                # (issue created but status update failed) returns False
+                # and we want the next tick's cold-start path to reconcile.
+                self._last_seen_jira[snap.key] = current_sig
+                self._last_seen_jira_status[snap.key] = snap.status_name
+            else:
+                stats.errors += 1
+            return
+
+        result = self._update_vk(
+            existing, snap, target_vk_status, previous_sig, previous_status
+        )
+        if result is None:
+            # MCP write failed — count as error and skip caching so the
+            # next tick retries the same drift instead of falsely
+            # treating Jira state as already mirrored.
+            stats.errors += 1
+            return
+
+        status_changed, content_changed = result
+        if status_changed:
+            stats.updated_status += 1
+        if content_changed:
+            stats.updated_content += 1
+        if not (status_changed or content_changed):
+            stats.skipped_unchanged += 1
+        elif self._ledger is not None:
+            # Only record on actual writes; "no-op" patches don't move state.
+            self._ledger.record_pushed_to_vk(snap.key, target_vk_status)
+
+        self._last_seen_jira[snap.key] = current_sig
+        self._last_seen_jira_status[snap.key] = snap.status_name
+
     def tick(self) -> SyncStats:
         """One pass: pull Jira, diff against VK, push deltas. Idempotent."""
         stats = SyncStats()
@@ -368,84 +454,73 @@ class JiraToVkSyncer:
 
         for raw in raw_issues:
             snap = JiraIssueSnapshot.from_search_hit(raw)
-            if not snap.key:
-                continue
-            stats.seen_jira_keys.append(snap.key)
-
-            if not is_syncable_jira_status(snap.status_name):
-                # Backlog or unmapped — leave alone. Don't cache, so a later
-                # transition out of Backlog re-enters the create path cleanly.
-                stats.skipped_unsupported += 1
-                continue
-
-            target_vk_status = jira_status_to_vk(snap.status_name)
-            if target_vk_status is None:
-                # Defensive: is_syncable_jira_status already gates this, but
-                # if state_map is mid-edit we don't want to crash.
-                stats.skipped_unsupported += 1
-                continue
-
-            existing = vk_by_key.get(snap.key)
-            previous_sig = self._last_seen_jira.get(snap.key)
-            previous_status = self._last_seen_jira_status.get(snap.key)
-            current_sig = snap.signature()
-
-            # Anti-loop: if we just transitioned Jira from VK->Jira, the
-            # status we're now reading on the Jira side is our own echo.
-            # Don't bounce it back through to VK — VK already has that state.
-            if (
-                self._ledger is not None
-                and existing is not None
-                and self._ledger.jira_status_was_pushed(snap.key, snap.status_name)
-                and normalize_vk_status(existing.status) == target_vk_status
-            ):
-                stats.skipped_unchanged += 1
-                self._last_seen_jira[snap.key] = current_sig
-                self._last_seen_jira_status[snap.key] = snap.status_name
-                continue
-
-            if existing is None:
-                if self._create_vk(snap, target_vk_status):
-                    stats.created += 1
-                    if self._ledger is not None:
-                        self._ledger.record_pushed_to_vk(snap.key, target_vk_status)
-                    # Cache only on full success: a partial-create failure
-                    # (issue created but status update failed) returns False
-                    # and we want the next tick's cold-start path to reconcile.
-                    self._last_seen_jira[snap.key] = current_sig
-                    self._last_seen_jira_status[snap.key] = snap.status_name
-                else:
-                    stats.errors += 1
-                continue
-
-            result = self._update_vk(
-                existing, snap, target_vk_status, previous_sig, previous_status
-            )
-            if result is None:
-                # MCP write failed — count as error and skip caching so the
-                # next tick retries the same drift instead of falsely
-                # treating Jira state as already mirrored.
-                stats.errors += 1
-                continue
-
-            status_changed, content_changed = result
-            if status_changed:
-                stats.updated_status += 1
-            if content_changed:
-                stats.updated_content += 1
-            if not (status_changed or content_changed):
-                stats.skipped_unchanged += 1
-            elif self._ledger is not None:
-                # Only record on actual writes; "no-op" patches don't move state.
-                self._ledger.record_pushed_to_vk(snap.key, target_vk_status)
-
-            self._last_seen_jira[snap.key] = current_sig
-            self._last_seen_jira_status[snap.key] = snap.status_name
+            self._sync_one(snap, vk_by_key, stats)
 
         # Update the bound-count high-water mark only on a tick that actually
         # observed VK successfully. Decreasing toward 0 is fine (deletions
         # happen) but going from N>0 to 0 in a single tick is the signature
         # we guard against above.
         self._last_vk_bound_count = len(vk_by_key)
+
+        return stats
+
+    def tick_for_key(self, jira_key: str) -> SyncStats:
+        """Targeted sync for a single Jira key.
+
+        Used by the HTTP API for Forge-triggered immediate sync. Trades the
+        ~3s indexing lag of `/search/jql` for a direct GET on the issue
+        (`/rest/api/3/issue/{key}`), so the freshly-changed Jira state is
+        visible immediately. Still has to list VK to find the matching task —
+        VK 0.1.43 has no `find by external_id` API, so we filter the title
+        prefix client-side.
+
+        The empty-VK guard is intentionally NOT applied here: a single-key
+        request can't meaningfully distinguish "VK is healthy but this key
+        has no mirror yet" from "VK transport failed" — the caller knows
+        the key exists in Jira and is asking us to ensure VK matches.
+
+        Project scope: refuses keys outside `_jira_project_key`. The full
+        sweep filters by project at the JQL layer; the targeted path bypasses
+        that, so without this check `POST /sync/tick/OTHER-1` on a SCRUM-
+        configured server would happily fetch OTHER-1 and create a mirror
+        in the SCRUM-tied VK project.
+        """
+        stats = SyncStats()
+
+        if not jira_key.startswith(self._jira_project_key + "-"):
+            logger.warning(
+                "tick_for_key refused: key %r is outside configured project %r",
+                jira_key, self._jira_project_key,
+            )
+            stats.skipped_unsupported += 1
+            return stats
+
+        try:
+            raw = self._jira.get_issue(jira_key)
+        except Exception as e:
+            logger.error("Jira get_issue failed for %s: %s", jira_key, e)
+            stats.errors += 1
+            return stats
+
+        try:
+            vk_issues = self._mcp.list_all_issues(
+                self._vk_project_id, page_size=self._page_size
+            )
+        except Exception as e:
+            logger.error("VK list failed for project %s: %s", self._vk_project_id, e)
+            stats.errors += 1
+            return stats
+
+        vk_by_key = self._index_vk_by_key(vk_issues)
+        snap = JiraIssueSnapshot.from_search_hit(cast(dict[str, JSONValue], raw))
+        self._sync_one(snap, vk_by_key, stats)
+
+        # Deliberately do NOT update `_last_vk_bound_count` here. The full
+        # sweep uses that as a high-water mark to detect "VK silently
+        # returned empty" and skip the create path on the next tick. If a
+        # targeted call ran while MCP was misbehaving (returning [] under
+        # a transport failure), overwriting the high-water with 0 would
+        # defeat the guard and a subsequent `tick()` could mass-recreate
+        # mirrors. Leave the mark alone — only `tick()` should move it.
 
         return stats

@@ -611,3 +611,170 @@ def test_tick_does_not_cache_jira_state_on_partial_create_failure() -> None:
     # The reconciliation update is the third update_issue call overall.
     assert len(mcp.updated_calls) == 2
     assert mcp.updated_calls[-1]["status"] == "In progress"
+
+
+# ----- tick_for_key — targeted single-issue sync -----
+
+
+def make_get_issue_handler(
+    issue: dict, *, key: str
+) -> Callable[[httpx.Request], httpx.Response]:
+    """Serve `GET /rest/api/3/issue/{key}` with the given issue payload.
+
+    Returns 404 for any other key — tests that target one key shouldn't
+    accidentally fetch others, and a stray 200 would mask routing bugs.
+    """
+    def handler(req: httpx.Request) -> httpx.Response:
+        if req.url.path == f"/rest/api/3/issue/{key}" and req.method == "GET":
+            return httpx.Response(200, json=issue)
+        if req.url.path.startswith("/rest/api/3/issue/") and req.method == "GET":
+            return httpx.Response(404, json={"errorMessages": ["not found"]})
+        return httpx.Response(404, text=f"unexpected: {req.method} {req.url.path}")
+    return handler
+
+
+def test_tick_for_key_creates_when_vk_has_no_mirror() -> None:
+    """Targeted sync on a Jira key absent from VK should create the mirror."""
+    issue = jira_issue("SCRUM-100", "Brand new", "To Do")
+    handler = make_get_issue_handler(issue, key="SCRUM-100")
+
+    mcp = FakeMcpClient()
+    with make_jira_client(handler) as jira:
+        syncer = JiraToVkSyncer(
+            jira=jira, mcp=mcp, jira_project_key="SCRUM", vk_project_id="p"
+        )
+        stats = syncer.tick_for_key("SCRUM-100")
+
+    assert stats.created == 1
+    assert mcp.created_calls[0]["title"] == "[SCRUM-100] Brand new"
+
+
+def test_tick_for_key_updates_status_when_jira_changed() -> None:
+    """Targeted sync on a Jira key with stale VK status should patch VK."""
+    issue = jira_issue("SCRUM-101", "x", "Done")
+    handler = make_get_issue_handler(issue, key="SCRUM-101")
+
+    mcp = FakeMcpClient(
+        issues=[
+            McpIssue(
+                id="vk-101",
+                simple_id="101",
+                title="[SCRUM-101] x",
+                status="inprogress",
+            )
+        ]
+    )
+    with make_jira_client(handler) as jira:
+        syncer = JiraToVkSyncer(
+            jira=jira, mcp=mcp, jira_project_key="SCRUM", vk_project_id="p"
+        )
+        stats = syncer.tick_for_key("SCRUM-101")
+
+    assert stats.updated_status == 1
+    assert mcp.updated_calls[0]["status"] == "Done"
+
+
+def test_tick_for_key_skips_backlog() -> None:
+    """Backlog Jira issues are not syncable — no mirror, no error."""
+    issue = jira_issue("SCRUM-102", "Idea", "Backlog")
+    handler = make_get_issue_handler(issue, key="SCRUM-102")
+
+    mcp = FakeMcpClient()
+    with make_jira_client(handler) as jira:
+        syncer = JiraToVkSyncer(
+            jira=jira, mcp=mcp, jira_project_key="SCRUM", vk_project_id="p"
+        )
+        stats = syncer.tick_for_key("SCRUM-102")
+
+    assert stats.created == 0
+    assert stats.skipped_unsupported == 1
+    assert mcp.created_calls == []
+
+
+def test_tick_for_key_records_jira_get_error() -> None:
+    """If Jira returns 404 for the key, surface as an error — don't crash."""
+    def handler(req: httpx.Request) -> httpx.Response:
+        return httpx.Response(404, json={"errorMessages": ["not found"]})
+
+    mcp = FakeMcpClient()
+    with make_jira_client(handler) as jira:
+        syncer = JiraToVkSyncer(
+            jira=jira, mcp=mcp, jira_project_key="SCRUM", vk_project_id="p"
+        )
+        stats = syncer.tick_for_key("SCRUM-999")
+
+    assert stats.errors == 1
+    assert mcp.created_calls == []
+
+
+def test_tick_for_key_does_not_apply_empty_vk_guard() -> None:
+    """Targeted sync must work even when VK has no other bound tasks.
+
+    The full-sweep guard treats `bound_count==0 after seeing N>0 last tick`
+    as a transport failure. For tick_for_key we explicitly skip that — the
+    caller already knows the key exists and is asking us to ensure a
+    mirror, so an empty VK should still let the create path fire.
+    """
+    issue = jira_issue("SCRUM-103", "x", "To Do")
+    handler = make_get_issue_handler(issue, key="SCRUM-103")
+
+    mcp = FakeMcpClient()
+    with make_jira_client(handler) as jira:
+        syncer = JiraToVkSyncer(
+            jira=jira, mcp=mcp, jira_project_key="SCRUM", vk_project_id="p"
+        )
+        # Pre-poison the high-water mark — full-sweep tick() would refuse
+        # to create. tick_for_key MUST still create (the guard is
+        # intentionally not applied to targeted syncs).
+        syncer._last_vk_bound_count = 5
+        stats = syncer.tick_for_key("SCRUM-103")
+
+    assert stats.errors == 0
+    assert stats.created == 1
+
+
+def test_tick_for_key_does_not_overwrite_high_water_mark() -> None:
+    """Targeted sync must NOT downgrade _last_vk_bound_count.
+
+    If a targeted call ran while VK silently returned [] (the known
+    transport-failure mode that the full-sweep guard exists to catch),
+    overwriting `_last_vk_bound_count` to 0 would defeat the guard on the
+    next `tick()` and could mass-recreate every Jira mirror.
+    """
+    issue = jira_issue("SCRUM-104", "x", "To Do")
+    handler = make_get_issue_handler(issue, key="SCRUM-104")
+
+    mcp = FakeMcpClient()  # empty VK
+    with make_jira_client(handler) as jira:
+        syncer = JiraToVkSyncer(
+            jira=jira, mcp=mcp, jira_project_key="SCRUM", vk_project_id="p"
+        )
+        syncer._last_vk_bound_count = 7
+        syncer.tick_for_key("SCRUM-104")
+
+    # The high-water mark must be untouched even though list_all_issues
+    # returned []. Only `tick()` is allowed to move this value.
+    assert syncer._last_vk_bound_count == 7
+
+
+def test_tick_for_key_refuses_keys_outside_configured_project() -> None:
+    """tick_for_key must reject keys outside _jira_project_key.
+
+    Without this gate, POST /sync/tick/OTHER-1 on a SCRUM-configured server
+    would happily fetch OTHER-1 and create a mirror in the SCRUM-tied VK
+    project — defeating project isolation.
+    """
+    # Handler returns 200 for OTHER-1 — if we *do* fetch, the bug is real.
+    issue = jira_issue("OTHER-1", "external", "To Do")
+    handler = make_get_issue_handler(issue, key="OTHER-1")
+
+    mcp = FakeMcpClient()
+    with make_jira_client(handler) as jira:
+        syncer = JiraToVkSyncer(
+            jira=jira, mcp=mcp, jira_project_key="SCRUM", vk_project_id="p"
+        )
+        stats = syncer.tick_for_key("OTHER-1")
+
+    assert stats.skipped_unsupported == 1
+    assert stats.created == 0
+    assert mcp.created_calls == []
