@@ -5,6 +5,8 @@ import queue
 import time
 import logging
 import os
+import urllib.error
+import urllib.request
 from collections import deque
 from datetime import datetime, timezone
 from typing import Optional
@@ -16,6 +18,7 @@ MCP_SERVER_CMD = ["npx", "-y", "vibe-kanban@0.1.43", "--mcp"]
 MCP_CALL_TIMEOUT_SECONDS = 60
 MCP_STARTUP_TIMEOUT_SECONDS = 120
 MCP_RESPONSE_POLL_INTERVAL_SECONDS = 1
+VIBE_BACKEND_URL = os.environ.get("VIBE_BACKEND_URL", "http://127.0.0.1:63861")
 
 @dataclass
 class McpOrganization:
@@ -233,13 +236,19 @@ class McpClient:
         })
         return result
 
+    def _parse_tool_json(self, result: dict) -> dict:
+        content = result.get("content", [])
+        if content and content[0].get("type") == "text":
+            data = json.loads(content[0]["text"])
+            if isinstance(data, dict):
+                return data
+        return {}
+
     def list_organizations(self) -> list[McpOrganization]:
         try:
             result = self.call_tool("list_organizations", {})
-            content = result.get("content", [])
-            if content and content[0].get("type") == "text":
-                data = json.loads(content[0]["text"])
-                return [McpOrganization(**org) for org in data.get("organizations", [])]
+            data = self._parse_tool_json(result)
+            return [McpOrganization(**org) for org in data.get("organizations", [])]
         except Exception as e:
             logger.warning(f"Failed to list organizations: {e}")
         return []
@@ -247,10 +256,8 @@ class McpClient:
     def list_projects(self, organization_id: str) -> list[McpProject]:
         try:
             result = self.call_tool("list_projects", {"organization_id": organization_id})
-            content = result.get("content", [])
-            if content and content[0].get("type") == "text":
-                data = json.loads(content[0]["text"])
-                return [McpProject(**p) for p in data.get("projects", [])]
+            data = self._parse_tool_json(result)
+            return [McpProject(**p) for p in data.get("projects", [])]
         except Exception as e:
             logger.warning(f"Failed to list projects: {e}")
         return []
@@ -267,10 +274,8 @@ class McpClient:
 
         try:
             result = self.call_tool("create_issue", params)
-            content = result.get("content", [])
-            if content and content[0].get("type") == "text":
-                data = json.loads(content[0]["text"])
-                return data.get("issue_id", "")
+            data = self._parse_tool_json(result)
+            return data.get("issue_id", "")
         except Exception as e:
             logger.error(f"Failed to create issue: {e}")
         return None
@@ -292,16 +297,14 @@ class McpClient:
 
         try:
             result = self.call_tool("list_issues", params)
-            content = result.get("content", [])
-            if content and content[0].get("type") == "text":
-                data = json.loads(content[0]["text"])
-                return [McpIssue(
-                    id=i["id"],
-                    simple_id=i.get("simple_id", ""),
-                    title=i["title"],
-                    status=i["status"],
-                    priority=i.get("priority")
-                ) for i in data.get("issues", [])]
+            data = self._parse_tool_json(result)
+            return [McpIssue(
+                id=i["id"],
+                simple_id=i.get("simple_id", ""),
+                title=i["title"],
+                status=i["status"],
+                priority=i.get("priority")
+            ) for i in data.get("issues", [])]
         except Exception as e:
             logger.warning(f"Failed to list issues: {e}")
         return []
@@ -383,10 +386,8 @@ class McpClient:
     def list_tags(self, project_id: str) -> list[dict]:
         try:
             result = self.call_tool("list_tags", {"project_id": project_id})
-            content = result.get("content", [])
-            if content and content[0].get("type") == "text":
-                data = json.loads(content[0]["text"])
-                return data.get("tags", []) if isinstance(data, dict) else []
+            data = self._parse_tool_json(result)
+            return data.get("tags", []) if isinstance(data, dict) else []
         except Exception as e:
             logger.warning(f"Failed to list tags: {e}")
         return []
@@ -402,16 +403,194 @@ class McpClient:
     def get_issue(self, issue_id: str) -> dict:
         try:
             result = self.call_tool("get_issue", {"issue_id": issue_id})
-            content = result.get("content", [])
-            if content and content[0].get("type") == "text":
-                data = json.loads(content[0]["text"])
-                if isinstance(data, dict):
-                    if isinstance(data.get("issue"), dict):
-                        return data["issue"]
-                    return data
+            data = self._parse_tool_json(result)
+            if isinstance(data.get("issue"), dict):
+                return data["issue"]
+            return data
         except Exception as e:
             logger.warning(f"Failed to get issue {issue_id}: {e}")
         return {}
+
+    def list_repos(self) -> list[dict]:
+        try:
+            result = self.call_tool("list_repos", {})
+            data = self._parse_tool_json(result)
+            if result.get("isError") or data.get("success") is False:
+                error = data.get("error") or "unknown error"
+                details = data.get("details")
+                raise RuntimeError(f"{error}" + (f": {details}" if details else ""))
+            return data.get("repos", []) if isinstance(data, dict) else []
+        except Exception as e:
+            logger.warning(f"Failed to list repos: {e}")
+            raise
+
+    def get_repo(self, repo_id: str) -> dict:
+        try:
+            result = self.call_tool("get_repo", {"repo_id": repo_id})
+            data = self._parse_tool_json(result)
+            if isinstance(data.get("repo"), dict):
+                return data["repo"]
+            return data
+        except Exception as e:
+            logger.warning(f"Failed to get repo {repo_id}: {e}")
+            return {}
+
+    def list_workspaces(
+        self,
+        archived: bool = None,
+        pinned: bool = None,
+        branch: str = None,
+        name_search: str = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[dict]:
+        params = {
+            "limit": limit,
+            "offset": offset,
+        }
+        if archived is not None:
+            params["archived"] = archived
+        if pinned is not None:
+            params["pinned"] = pinned
+        if branch:
+            params["branch"] = branch
+        if name_search:
+            params["name_search"] = name_search
+
+        try:
+            result = self.call_tool("list_workspaces", params)
+            data = self._parse_tool_json(result)
+            if result.get("isError") or data.get("success") is False:
+                error = data.get("error") or "unknown error"
+                details = data.get("details")
+                raise RuntimeError(f"{error}" + (f": {details}" if details else ""))
+            return data.get("workspaces", []) if isinstance(data, dict) else []
+        except Exception as e:
+            logger.warning(f"Failed to list workspaces: {e}")
+            raise
+
+    def list_sessions(self, workspace_id: str) -> list[dict]:
+        try:
+            result = self.call_tool("list_sessions", {"workspace_id": workspace_id})
+            data = self._parse_tool_json(result)
+            if result.get("isError") or data.get("success") is False:
+                error = data.get("error") or "unknown error"
+                details = data.get("details")
+                raise RuntimeError(f"{error}" + (f": {details}" if details else ""))
+            return data.get("sessions", []) if isinstance(data, dict) else []
+        except Exception as e:
+            logger.warning(f"Failed to list sessions for workspace {workspace_id}: {e}")
+            raise
+
+    def start_workspace(
+        self,
+        name: str,
+        executor: str,
+        repo_id: str,
+        branch: str,
+        prompt: str = None,
+        issue_id: str = None,
+        variant: str = None,
+    ) -> dict:
+        params = {
+            "name": name,
+            "executor": executor,
+            "repositories": [
+                {
+                    "repo_id": repo_id,
+                    "branch": branch,
+                }
+            ],
+        }
+        if prompt:
+            params["prompt"] = prompt
+        if issue_id:
+            params["issue_id"] = issue_id
+        if variant:
+            params["variant"] = variant
+
+        try:
+            result = self.call_tool("start_workspace", params)
+            data = self._parse_tool_json(result)
+            if result.get("isError") or data.get("success") is False:
+                error = data.get("error") or "unknown error"
+                details = data.get("details")
+                raise RuntimeError(f"{error}" + (f": {details}" if details else ""))
+            return data
+        except Exception as e:
+            logger.error(f"Failed to start workspace for issue {issue_id}: {e}")
+            raise
+
+    def link_workspace_issue(self, workspace_id: str, issue_id: str) -> bool:
+        try:
+            result = self.call_tool(
+                "link_workspace_issue",
+                {"workspace_id": workspace_id, "issue_id": issue_id},
+            )
+            data = self._parse_tool_json(result)
+            if result.get("isError") or data.get("success") is False:
+                return False
+            return True
+        except Exception as e:
+            logger.error(f"Failed to link workspace {workspace_id} to issue {issue_id}: {e}")
+        return False
+
+    def get_execution(self, execution_id: str) -> dict:
+        try:
+            result = self.call_tool("get_execution", {"execution_id": execution_id})
+            data = self._parse_tool_json(result)
+            if isinstance(data.get("execution"), dict):
+                return data["execution"]
+            if isinstance(data.get("execution_process"), dict):
+                return data["execution_process"]
+            return data
+        except Exception as e:
+            logger.warning(f"Failed to get execution {execution_id}: {e}")
+        return {}
+
+    def delete_workspace(
+        self,
+        workspace_id: str,
+        delete_remote: bool = False,
+        delete_branches: bool = False,
+    ) -> bool:
+        params = {
+            "workspace_id": workspace_id,
+            "delete_remote": delete_remote,
+            "delete_branches": delete_branches,
+        }
+        try:
+            result = self.call_tool("delete_workspace", params)
+            data = self._parse_tool_json(result)
+            if result.get("isError") or data.get("success") is False:
+                return False
+            return True
+        except Exception as e:
+            logger.error(f"Failed to delete workspace {workspace_id}: {e}")
+        return False
+
+    def delete_repo(self, repo_id: str, backend_url: str = None) -> tuple[bool, str]:
+        """Delete a Vibe Kanban repository registration via the local backend API.
+
+        The MCP server exposes list/get/update repo operations but not delete_repo,
+        so this uses the same local backend that MCP calls internally.
+        """
+        base_url = (backend_url or VIBE_BACKEND_URL).rstrip("/")
+        url = f"{base_url}/api/repos/{repo_id}"
+        request = urllib.request.Request(url, method="DELETE")
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                body = response.read().decode("utf-8", errors="replace")
+                if 200 <= response.status < 300:
+                    return True, body
+                return False, f"HTTP {response.status}: {body}"
+        except urllib.error.HTTPError as e:
+            body = e.read().decode("utf-8", errors="replace")
+            return False, f"HTTP {e.code}: {body}"
+        except urllib.error.URLError as e:
+            return False, f"Could not connect to Vibe Kanban backend at {base_url}: {e.reason}"
+        except Exception as e:
+            return False, str(e)
 
     def close(self):
         if self.process:
@@ -509,6 +688,26 @@ def _resolve_project(client: McpClient, project_name: str) -> tuple[Optional[Mcp
     projects = client.list_projects(org.id)
     for project in projects:
         if project.name == project_name:
+            return org, project, projects
+
+    return org, None, projects
+
+
+def _resolve_project_by_name_or_id(
+    client: McpClient,
+    project_name: str = None,
+    project_id: str = None,
+) -> tuple[Optional[McpOrganization], Optional[McpProject], list[McpProject]]:
+    organizations = client.list_organizations()
+    if not organizations:
+        return None, None, []
+
+    org = organizations[0]
+    projects = client.list_projects(org.id)
+    for project in projects:
+        if project_id and project.id == project_id:
+            return org, project, projects
+        if project_name and project.name == project_name:
             return org, project, projects
 
     return org, None, projects

@@ -215,7 +215,9 @@ kanban_workspace_mapping.json
 ```bash
 uv run python main.py auto-workspace \
   --project-name "ScrumAI Project" \
+  --project-id "<optional-project-uuid>" \
   --repo-name "ScrumAI" \
+  --repo-id "<optional-repo-uuid>" \
   --base-branch main \
   --executor CODEX \
   --github-repo oldcai/ScrumAI \
@@ -228,7 +230,9 @@ uv run python main.py auto-workspace \
 | 参数 | 默认值 | 说明 |
 | --- | --- | --- |
 | `--project-name` | `ScrumAI Project` | Vibe Kanban project 名称 |
+| `--project-id` | 无 | Vibe Kanban project UUID；当 project name 重复或需要精确指定时优先使用 |
 | `--repo-name` | 无，必填 | Vibe Kanban 中已注册的 repository 名称或路径匹配关键字 |
+| `--repo-id` | 无 | Vibe Kanban repo UUID；当 repo name 重复时必须使用 |
 | `--base-branch` | `main` | workspace 基础分支；对应用户要求的 `origin/main` |
 | `--executor` | `CODEX` | Vibe Kanban coding model / executor |
 | `--github-repo` | 从 repo remote 推断 | GitHub PR 目标仓库，格式 `owner/repo` |
@@ -243,6 +247,97 @@ uv run python main.py auto-workspace \
 | `--include-existing-in-progress` | `false` | watcher 启动时已经在 In progress 的 issue 是否也自动创建 workspace |
 
 默认不处理 watcher 启动前已处于 `In progress` 的 ticket。原因是无法确认这是新动作还是历史状态，自动执行风险较高。需要补跑时显式加 `--include-existing-in-progress`。
+
+### 辅助 CLI
+
+为了避免 project / repo 名称重复导致无法精确选择，新增以下辅助命令。
+
+列出 Vibe Kanban project ID：
+
+```bash
+uv run python main.py list-kanban-projects
+```
+
+输出示例：
+
+```text
+Organization: Personal (id=<organization-id>)
+  - id=<project-id> name=NeckPacMan
+```
+
+列出 Vibe Kanban repo ID：
+
+```bash
+uv run python main.py list-kanban-repos
+```
+
+输出示例：
+
+```text
+- id=98afbd2b-9246-4121-8a50-1d7eff091367 name=NeckPacMan path=None default_branch=main
+- id=f3ccb0dd-08d6-496d-b216-336aa45c4a3a name=NeckPacMan path=None default_branch=main
+```
+
+当出现重复 repo name 时，使用 `--repo-id` 启动：
+
+```bash
+uv run python main.py auto-workspace \
+  --project-name "NeckPacMan" \
+  --repo-id 98afbd2b-9246-4121-8a50-1d7eff091367 \
+  --base-branch main
+```
+
+列出 workspace ID：
+
+```bash
+uv run python main.py list-kanban-workspaces
+```
+
+可选过滤：
+
+```bash
+uv run python main.py list-kanban-workspaces --name-search NeckPacMan
+uv run python main.py list-kanban-workspaces --branch main
+```
+
+删除 workspace：
+
+```bash
+uv run python main.py delete-kanban-workspace --workspace-id <workspace-id> --yes
+```
+
+可选删除远端 workspace / workspace branches：
+
+```bash
+uv run python main.py delete-kanban-workspace \
+  --workspace-id <workspace-id> \
+  --delete-remote \
+  --delete-branches \
+  --yes
+```
+
+删除重复的 Vibe Kanban repo registration：
+
+```bash
+uv run python main.py delete-kanban-repo --repo-id <repo-id> --yes
+```
+
+`delete-kanban-repo` 删除的是 Vibe Kanban 本地登记的 repo 记录，不是 GitHub repository，也不会删除本地源码目录。它通过本地 Vibe Kanban backend API 执行，因为当前 MCP 工具列表只有 `list_repos` / `get_repo`，没有 `delete_repo` 工具。
+
+默认 backend URL：
+
+```text
+VIBE_BACKEND_URL or http://127.0.0.1:63861
+```
+
+如果 Vibe Kanban backend 端口不同，可以显式传入：
+
+```bash
+uv run python main.py delete-kanban-repo \
+  --repo-id <repo-id> \
+  --backend-url http://127.0.0.1:<port> \
+  --yes
+```
 
 ## 模块设计
 
@@ -276,6 +371,15 @@ def start_workspace(
 def link_workspace_issue(self, workspace_id: str, issue_id: str) -> bool: ...
 
 def get_execution(self, execution_id: str) -> dict: ...
+
+def delete_workspace(
+    self,
+    workspace_id: str,
+    delete_remote: bool = False,
+    delete_branches: bool = False,
+) -> bool: ...
+
+def delete_repo(self, repo_id: str, backend_url: str | None = None) -> tuple[bool, str]: ...
 ```
 
 `start_workspace` 的返回结构需要在实现时用真实 MCP 响应确认，建议先按 dict 透传保存，解析时兼容这些字段：
@@ -359,6 +463,11 @@ runners/auto_workspace.py
 
 ```text
 auto-workspace
+list-kanban-projects
+list-kanban-repos
+list-kanban-workspaces
+delete-kanban-workspace
+delete-kanban-repo
 ```
 
 对应 handler：
@@ -540,6 +649,48 @@ Vibe Kanban workspace 需要 `repo_id`。实现时通过 `list_repos` 解析：
 
 这样在多 repo 环境下更稳定。
 
+### 重复 repo 处理流程
+
+如果启动时报：
+
+```text
+Error: repo name 'NeckPacMan' matched multiple Vibe Kanban repos.
+  - id=98afbd2b-9246-4121-8a50-1d7eff091367 name=NeckPacMan path=None
+  - id=f3ccb0dd-08d6-496d-b216-336aa45c4a3a name=NeckPacMan path=None
+Re-run with --repo-id <uuid> to disambiguate.
+```
+
+推荐处理：
+
+1. 先列出 repos：
+
+```bash
+uv run python main.py list-kanban-repos
+```
+
+2. 如果两个 repo 都有效，使用 `--repo-id` 精确启动。
+
+```bash
+uv run python main.py auto-workspace \
+  --project-name "NeckPacMan" \
+  --repo-id 98afbd2b-9246-4121-8a50-1d7eff091367 \
+  --base-branch main
+```
+
+3. 如果其中一个是误创建的重复记录，删除无效 repo registration：
+
+```bash
+uv run python main.py delete-kanban-repo \
+  --repo-id f3ccb0dd-08d6-496d-b216-336aa45c4a3a \
+  --yes
+```
+
+删除前建议确认该 repo 没有关联仍需要保留的 workspace；如不确定，先运行：
+
+```bash
+uv run python main.py list-kanban-workspaces --name-search NeckPacMan
+```
+
 ## 与现有 watcher 的关系
 
 现有 `watch-kanban` 负责依赖解锁：
@@ -582,6 +733,25 @@ Vibe Kanban API is not reachable. Start Vibe Kanban with: npx vibe-kanban
 ### Repo 未注册
 
 报错并提示用户先在 Vibe Kanban UI 中添加 git repository。
+
+### Repo 名称重复
+
+如果 `--repo-name` 匹配到多个 repo，`auto-workspace` 会拒绝启动并打印候选 repo IDs。处理方式：
+
+1. 用 `list-kanban-repos` 查看完整 repo 列表。
+2. 用 `--repo-id <uuid>` 精确指定。
+3. 如果确认某个 repo registration 是重复/无效记录，用 `delete-kanban-repo --repo-id <uuid> --yes` 删除。
+
+### 删除 repo 失败
+
+`delete-kanban-repo` 依赖 Vibe Kanban 本地 backend API。失败常见原因：
+
+- Vibe Kanban 没有运行。
+- backend 端口不是默认的 `63861`，需要传 `--backend-url` 或设置 `VIBE_BACKEND_URL`。
+- Vibe Kanban backend 当前版本不支持 `DELETE /api/repos/{repo_id}`。
+- repo 仍被 workspace 或 project 引用，backend 拒绝删除。
+
+该命令只删除 Vibe Kanban repo registration，不删除 GitHub repo，也不删除本地源码目录。
 
 ### Codex executor 不可用
 
@@ -682,11 +852,13 @@ MVP 不做自动重建。
 3. 新增 GitHub PR helper，优先使用 `gh pr create`，支持后续替换成 GitHub REST API。
 4. 新增 `runners/auto_workspace.py`，实现轮询、状态转换识别、prompt 生成、execution 监控、PR 创建和 mapping。
 5. 在 `main.py` 注册 `auto-workspace` 命令。
-6. 用 `--dry-run --once` 验证 project / repo / issue 识别。
-7. 手动把一个 ScrumAI ticket 拖到 `In progress`，验证是否调用 `start_workspace`。
-8. 等 agent execution 完成后，验证是否创建 GitHub PR 并移动到 `In review`。
-9. 验证重复拖动不会创建第二个 workspace，重复轮询不会创建第二个 PR。
-10. 更新 `docs/vibe_kanban_full_guide.md`，把自动执行流程作为可选高级用法加入。
+6. 在 `main.py` 注册 `list-kanban-projects`、`list-kanban-repos`、`list-kanban-workspaces`、`delete-kanban-workspace`、`delete-kanban-repo` 辅助命令。
+7. 用 `list-kanban-repos` 验证 repo ID；名称重复时用 `--repo-id`。
+8. 用 `--dry-run --once` 验证 project / repo / issue 识别。
+9. 手动把一个 ScrumAI ticket 拖到 `In progress`，验证是否调用 `start_workspace`。
+10. 等 agent execution 完成后，验证是否创建 GitHub PR 并移动到 `In review`。
+11. 验证重复拖动不会创建第二个 workspace，重复轮询不会创建第二个 PR。
+12. 更新 `docs/vibe_kanban_full_guide.md`，把自动执行流程作为可选高级用法加入。
 
 ## 验收标准
 
@@ -699,6 +871,8 @@ MVP 不做自动重建。
 - PR 创建成功后，ticket 自动从 `In progress` 移动到 `In review`。
 - 同一个 issue 不会重复创建 PR。
 - execution 失败、无代码变更、GitHub 认证失败时，不移动到 `In review`。
+- 可以列出 Vibe Kanban project/repo/workspace IDs，解决名称重复导致的歧义。
+- 可以通过 `delete-kanban-repo --repo-id <uuid> --yes` 删除重复或错误的 Vibe Kanban repo registration。
 - `--dry-run --once` 可以安全验证将要执行的动作。
 - Vibe Kanban 未运行、repo 未匹配、executor 不可用、`In review` 状态不存在时有明确错误信息。
 
@@ -708,5 +882,6 @@ MVP 不做自动重建。
 - `origin/main` 在 MCP 参数中体现为 branch `main`；是否 fetch 最新 origin 由 Vibe Kanban / repo 状态决定。若需要强一致，可以在后续增加 git preflight。
 - 自动创建 workspace 会启动真实 coding agent，自动创建 PR 会影响 GitHub repo，因此建议默认只在用户明确运行 `auto-workspace` 后启用。
 - PR 创建依赖 workspace 分支、GitHub remote、GitHub 认证和 push 权限。MVP 使用 `gh` CLI 可最快落地，但 CI / server 场景应改为 GitHub REST API + `GITHUB_TOKEN`。
+- `delete-kanban-repo` 使用 Vibe Kanban 本地 backend API，而不是 MCP tool；如果 Vibe Kanban 改端口或 API 路径，需要通过 `--backend-url` 调整或升级适配。
 - 是否把成功 execution 直接视为“开发完毕”存在质量风险。更严格的版本可以要求 agent 输出检查结果、测试通过，或增加 reviewer agent gate 后再创建 PR。
 - 如果 Vibe Kanban 后续提供状态变更事件或 webhook，应把轮询 watcher 替换为事件驱动，但核心幂等和 mapping 设计不变。

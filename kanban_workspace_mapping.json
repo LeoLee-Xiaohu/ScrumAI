@@ -1,0 +1,17 @@
+{
+  "issue_to_workspace": {},
+  "project_id": "5752a0ea-05ff-49e6-b080-fabaf5b67423",
+  "project_name": "NeckPacMan",
+  "organization_id": "b32696dc-8d6b-4284-88e6-13ca87dd4ecb",
+  "repo_id": "f3ccb0dd-08d6-496d-b216-336aa45c4a3a",
+  "repo_name": "NeckPacMan",
+  "repo_path": null,
+  "executor": "CODEX",
+  "base_branch": "main",
+  "github": {
+    "owner": "LeoLee-Xiaohu",
+    "repo": "NeckPacMan",
+    "base": "main",
+    "full_name": "LeoLee-Xiaohu/NeckPacMan"
+  }
+}

@@ -142,6 +142,141 @@ def cmd_clear_kanban(args: argparse.Namespace) -> None:
         sys.exit(1)
 
 
+def cmd_list_kanban_projects(_args: argparse.Namespace) -> None:
+    """List Vibe Kanban organizations and projects with IDs."""
+    from mcp_adapter import McpClient
+
+    print("Starting Vibe Kanban MCP Server...")
+    client = McpClient()
+    try:
+        organizations = client.list_organizations()
+        if not organizations:
+            print("No organizations found. Make sure you are signed in to Vibe Kanban.")
+            return
+        for org in organizations:
+            print(f"Organization: {org.name} (id={org.id})")
+            projects = client.list_projects(org.id)
+            if not projects:
+                print("  No projects found.")
+                continue
+            for project in projects:
+                print(f"  - id={project.id} name={project.name}")
+    finally:
+        client.close()
+
+
+def cmd_list_kanban_repos(_args: argparse.Namespace) -> None:
+    """List Vibe Kanban repositories with IDs."""
+    from mcp_adapter import McpClient
+
+    print("Starting Vibe Kanban MCP Server...")
+    client = McpClient()
+    try:
+        repos = client.list_repos()
+        if not repos:
+            print("No repositories found.")
+            return
+        for repo in repos:
+            default_branch = repo.get("default_target_branch") or repo.get("default_branch") or ""
+            print(
+                f"- id={repo.get('id')} "
+                f"name={repo.get('name')} "
+                f"path={repo.get('path')} "
+                f"default_branch={default_branch}"
+            )
+    finally:
+        client.close()
+
+
+def cmd_list_kanban_workspaces(args: argparse.Namespace) -> None:
+    """List Vibe Kanban workspaces with IDs."""
+    from mcp_adapter import McpClient
+
+    print("Starting Vibe Kanban MCP Server...")
+    client = McpClient()
+    try:
+        workspaces = client.list_workspaces(
+            archived=args.archived,
+            pinned=args.pinned,
+            branch=args.branch,
+            name_search=args.name_search,
+            limit=args.limit,
+        )
+        if not workspaces:
+            print("No workspaces found.")
+            return
+        for workspace in workspaces:
+            print(
+                f"- id={workspace.get('id')} "
+                f"name={workspace.get('name')} "
+                f"branch={workspace.get('branch')} "
+                f"issue_id={workspace.get('issue_id')} "
+                f"archived={workspace.get('archived')}"
+            )
+    finally:
+        client.close()
+
+
+def cmd_delete_kanban_workspace(args: argparse.Namespace) -> None:
+    """Delete a Vibe Kanban workspace by ID."""
+    from mcp_adapter import McpClient
+
+    if not args.yes:
+        print("Refusing to delete workspace without --yes.")
+        print("Re-run with --yes to confirm deletion.")
+        sys.exit(1)
+
+    print("Starting Vibe Kanban MCP Server...")
+    client = McpClient()
+    try:
+        success = client.delete_workspace(
+            workspace_id=args.workspace_id,
+            delete_remote=args.delete_remote,
+            delete_branches=args.delete_branches,
+        )
+        if not success:
+            print(f"Failed to delete workspace {args.workspace_id}.")
+            sys.exit(1)
+        print(f"Deleted workspace {args.workspace_id}.")
+    finally:
+        client.close()
+
+
+def cmd_delete_kanban_repo(args: argparse.Namespace) -> None:
+    """Delete a Vibe Kanban repo registration by ID."""
+    from mcp_adapter import McpClient
+
+    if not args.yes:
+        print("Refusing to delete repo without --yes.")
+        print("Re-run with --yes to confirm deletion.")
+        sys.exit(1)
+
+    print("Starting Vibe Kanban MCP Server...")
+    client = McpClient()
+    try:
+        repo = client.get_repo(args.repo_id)
+        if not repo:
+            print(f"Repo {args.repo_id} was not found.")
+            sys.exit(1)
+
+        print(
+            "Deleting Vibe Kanban repo registration: "
+            f"id={repo.get('id')} name={repo.get('name')} path={repo.get('path')}"
+        )
+        success, message = client.delete_repo(
+            repo_id=args.repo_id,
+            backend_url=args.backend_url,
+        )
+        if not success:
+            print(f"Failed to delete repo {args.repo_id}.")
+            if message:
+                print(message)
+            sys.exit(1)
+        print(f"Deleted repo {args.repo_id}.")
+    finally:
+        client.close()
+
+
 def cmd_watch_kanban(args: argparse.Namespace) -> None:
     """Run the watch-kanban command - promotes Backlog tasks whose blockers are Done."""
     from mcp_adapter import run_mcp_watch
@@ -149,6 +284,16 @@ def cmd_watch_kanban(args: argparse.Namespace) -> None:
     success = run_mcp_watch(args)
     if not success:
         print("Watch failed.")
+        sys.exit(1)
+
+
+def cmd_auto_workspace(args: argparse.Namespace) -> None:
+    """Run the auto-workspace watcher."""
+    from runners.auto_workspace import run_auto_workspace
+
+    success = run_auto_workspace(args)
+    if not success:
+        print("Auto workspace watcher failed.")
         sys.exit(1)
 
 
@@ -212,6 +357,11 @@ Examples:
   uv run main.py deploy --project-name "Your Project Name"
   uv run main.py deploy -i my_decomposed_task.json -d my_dispatch.json --project-name "Your Project Name"
   uv run main.py deploy -i my_decomposed_task.json -d my_dispatch.json --no-watch   Export only, skip watcher
+  uv run main.py auto-workspace --project-name "Your Project Name" --repo-name "ScrumAI" --github-repo owner/repo
+  uv run main.py list-kanban-repos             List repo IDs for --repo-id
+  uv run main.py list-kanban-projects          List project IDs for --project-id
+  uv run main.py delete-kanban-repo --repo-id <id> --yes
+  uv run main.py delete-kanban-workspace --workspace-id <id> --yes
   uv run main.py clear-kanban --project-name "Your Project Name" --yes
   uv run main.py prompts                       List available prompts
         """,
@@ -335,6 +485,56 @@ Examples:
     )
     p_clear.set_defaults(func=cmd_clear_kanban)
 
+    # list-kanban-projects
+    p_list_projects = subparsers.add_parser(
+        "list-kanban-projects",
+        help="List Vibe Kanban project IDs",
+    )
+    p_list_projects.set_defaults(func=cmd_list_kanban_projects)
+
+    # list-kanban-repos
+    p_list_repos = subparsers.add_parser(
+        "list-kanban-repos",
+        help="List Vibe Kanban repository IDs for --repo-id",
+    )
+    p_list_repos.set_defaults(func=cmd_list_kanban_repos)
+
+    # list-kanban-workspaces
+    p_list_workspaces = subparsers.add_parser(
+        "list-kanban-workspaces",
+        help="List Vibe Kanban workspace IDs",
+    )
+    p_list_workspaces.add_argument("--branch", help="Filter by exact branch")
+    p_list_workspaces.add_argument("--name-search", help="Filter by workspace name substring")
+    p_list_workspaces.add_argument("--archived", action="store_true", default=None, help="Only list archived workspaces")
+    p_list_workspaces.add_argument("--pinned", action="store_true", default=None, help="Only list pinned workspaces")
+    p_list_workspaces.add_argument("--limit", type=int, default=100, help="Maximum workspaces to list")
+    p_list_workspaces.set_defaults(func=cmd_list_kanban_workspaces)
+
+    # delete-kanban-workspace
+    p_delete_workspace = subparsers.add_parser(
+        "delete-kanban-workspace",
+        help="Delete a Vibe Kanban workspace by ID",
+    )
+    p_delete_workspace.add_argument("--workspace-id", required=True, help="Workspace UUID to delete")
+    p_delete_workspace.add_argument("--delete-remote", action="store_true", help="Also delete linked remote workspace")
+    p_delete_workspace.add_argument("--delete-branches", action="store_true", help="Also delete workspace branches")
+    p_delete_workspace.add_argument("--yes", action="store_true", help="Confirm workspace deletion")
+    p_delete_workspace.set_defaults(func=cmd_delete_kanban_workspace)
+
+    # delete-kanban-repo
+    p_delete_repo = subparsers.add_parser(
+        "delete-kanban-repo",
+        help="Delete a Vibe Kanban repository registration by ID",
+    )
+    p_delete_repo.add_argument("--repo-id", required=True, help="Repository UUID to delete")
+    p_delete_repo.add_argument(
+        "--backend-url",
+        help="Vibe Kanban backend URL (default: VIBE_BACKEND_URL or http://127.0.0.1:63861)",
+    )
+    p_delete_repo.add_argument("--yes", action="store_true", help="Confirm repo deletion")
+    p_delete_repo.set_defaults(func=cmd_delete_kanban_repo)
+
     # watch-kanban
     p_watch = subparsers.add_parser(
         "watch-kanban",
@@ -357,6 +557,77 @@ Examples:
         help="Scan once and exit instead of looping",
     )
     p_watch.set_defaults(func=cmd_watch_kanban)
+
+    # auto-workspace
+    p_auto_workspace = subparsers.add_parser(
+        "auto-workspace",
+        help="Create workspaces for In progress issues and PRs when agent work completes",
+    )
+    p_auto_workspace.add_argument(
+        "--project-name", default="ScrumAI Project",
+        help="Name of the Vibe Kanban project",
+    )
+    p_auto_workspace.add_argument(
+        "--project-id",
+        help="Exact Vibe Kanban project UUID (preferred when project names collide)",
+    )
+    p_auto_workspace.add_argument(
+        "--repo-name",
+        help="Name or path fragment of the Vibe Kanban repo to use for workspaces",
+    )
+    p_auto_workspace.add_argument(
+        "--repo-id",
+        help="Exact Vibe Kanban repo UUID to use for workspaces (preferred when available)",
+    )
+    p_auto_workspace.add_argument(
+        "--base-branch", default="main",
+        help="Workspace base branch (default: main, corresponding to origin/main)",
+    )
+    p_auto_workspace.add_argument(
+        "--executor", default="CODEX",
+        help="Vibe Kanban executor/model to use (default: CODEX)",
+    )
+    p_auto_workspace.add_argument(
+        "--github-repo",
+        help="GitHub repo for PRs in owner/repo format (defaults to repo origin remote when inferable)",
+    )
+    p_auto_workspace.add_argument(
+        "--review-status", default="In review",
+        help="Issue status to move to after PR creation (default: In review)",
+    )
+    p_auto_workspace.add_argument(
+        "--pr-base",
+        help="GitHub PR base branch (default: same as --base-branch)",
+    )
+    p_auto_workspace.add_argument(
+        "--pr-draft", action="store_true",
+        help="Create draft PRs",
+    )
+    p_auto_workspace.add_argument(
+        "--skip-pr", action="store_true",
+        help="Only create workspaces; do not create PRs or move issues to review",
+    )
+    p_auto_workspace.add_argument(
+        "--mapping", default="kanban_workspace_mapping.json",
+        help="Path to issue -> workspace/PR mapping file",
+    )
+    p_auto_workspace.add_argument(
+        "--interval", type=int, default=5,
+        help="Poll interval in seconds (default: 5)",
+    )
+    p_auto_workspace.add_argument(
+        "--once", action="store_true",
+        help="Scan once and exit instead of looping",
+    )
+    p_auto_workspace.add_argument(
+        "--dry-run", action="store_true",
+        help="Print planned workspace/PR actions without creating them",
+    )
+    p_auto_workspace.add_argument(
+        "--include-existing-in-progress", action="store_true",
+        help="Also process issues already in In progress on watcher startup",
+    )
+    p_auto_workspace.set_defaults(func=cmd_auto_workspace)
 
     # deploy (export-kanban + watch-kanban in one step)
     p_deploy = subparsers.add_parser(
