@@ -1,5 +1,28 @@
 {
-  "issue_to_workspace": {},
+  "issue_to_workspace": {
+    "e0b47c6a-4ce1-4819-94b6-7cefa9044540": {
+      "state": "created",
+      "issue_id": "e0b47c6a-4ce1-4819-94b6-7cefa9044540",
+      "issue_simple_id": "LEO-75",
+      "issue_title": "optimise camera preview location",
+      "repo_id": "f3ccb0dd-08d6-496d-b216-336aa45c4a3a",
+      "base_branch": "main",
+      "executor": "CODEX",
+      "executor_model_id": "gpt-5.4",
+      "started_at": "2026-05-04T10:10:06.178979+00:00",
+      "workspace_id": "4a66bcf0-e9cb-4b50-9f01-21066d6b6368",
+      "session_id": "1579af5c-8f86-4b35-ac69-12a76290f8e7",
+      "execution_id": null,
+      "workspace_branch": null,
+      "created_at": "2026-05-04T10:10:09.579014+00:00",
+      "start_workspace_response": {
+        "workspace_id": "4a66bcf0-e9cb-4b50-9f01-21066d6b6368"
+      },
+      "issue_linked": false,
+      "issue_link_error": "VK API returned error status: 409 Conflict",
+      "issue_link_failed_at": "2026-05-04T10:10:10.197257+00:00"
+    }
+  },
   "project_id": "5752a0ea-05ff-49e6-b080-fabaf5b67423",
   "project_name": "NeckPacMan",
   "organization_id": "b32696dc-8d6b-4284-88e6-13ca87dd4ecb",
@@ -13,5 +36,6 @@
     "repo": "NeckPacMan",
     "base": "main",
     "full_name": "LeoLee-Xiaohu/NeckPacMan"
-  }
+  },
+  "executor_model_id": "gpt-5.4"
 }

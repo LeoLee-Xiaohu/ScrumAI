@@ -63,7 +63,7 @@ uv run python main.py auto-workspace \
 
 - issue 当前状态是 `In progress` 或 `In Progress`。
 - issue 之前在 watcher 本地状态中不是 `In progress`。
-- issue 是 ScrumAI 导入的 ticket。
+- issue 是 ScrumAI 导入的 ticket，或手动创建的 ticket。
 - issue 尚未创建过 workspace。
 
 ### ScrumAI ticket 识别
@@ -79,6 +79,32 @@ uv run python main.py auto-workspace \
 兜底规则可以沿用当前 `_looks_like_scrumai_issue_title()`：
 
 - title 形如 `[STORY-001] xxx`
+
+### 手动 ticket 支持
+
+默认处理手动创建的 ticket。watcher 不要求 ScrumAI markers；任何进入 `In progress` 且尚未创建 workspace 的 issue 都会触发 workspace 创建。
+
+如果只想处理 ScrumAI 导入 ticket，可使用：
+
+```bash
+uv run python main.py auto-workspace \
+  --project-name "NeckPacMan" \
+  --repo-id <repo-id> \
+  --scrumai-only
+```
+
+建议配合 `--dry-run --once` 先确认会触发哪些 ticket：
+
+```bash
+uv run python main.py auto-workspace \
+  --project-name "NeckPacMan" \
+  --repo-id <repo-id> \
+  --include-existing-in-progress \
+  --dry-run \
+  --once
+```
+
+手动 ticket 的 title / description 会直接作为 Codex prompt 上下文。建议手动 ticket 至少包含目标行为、验收标准、相关文件或复现步骤，以及不应修改的边界。
 
 ### 为什么监听 `Todo -> In progress`
 
@@ -222,7 +248,7 @@ uv run python main.py auto-workspace \
   --executor CODEX \
   --github-repo oldcai/ScrumAI \
   --mapping kanban_workspace_mapping.json \
-  --interval 5
+  --interval 1
 ```
 
 参数建议：
@@ -241,12 +267,16 @@ uv run python main.py auto-workspace \
 | `--pr-draft` | `false` | 是否创建 draft PR |
 | `--skip-pr` | `false` | 只自动创建 workspace，不自动创建 PR / 移动 In review |
 | `--mapping` | `kanban_workspace_mapping.json` | issue -> workspace 映射 |
-| `--interval` | `5` | 轮询间隔秒数 |
+| `--interval` | `1` | 轮询间隔秒数 |
 | `--once` | `false` | 扫描一次后退出，方便测试 |
 | `--dry-run` | `false` | 只打印将要创建的 workspace，不调用 `start_workspace` |
 | `--include-existing-in-progress` | `false` | watcher 启动时已经在 In progress 的 issue 是否也自动创建 workspace |
+| `--include-manual-issues` | 已废弃 | 手动 ticket 已默认支持，保留该参数仅兼容旧命令 |
+| `--scrumai-only` | `false` | 只处理 ScrumAI 导入 ticket，跳过手动 ticket |
 
 默认不处理 watcher 启动前已处于 `In progress` 的 ticket。原因是无法确认这是新动作还是历史状态，自动执行风险较高。需要补跑时显式加 `--include-existing-in-progress`。
+
+默认同时处理 ScrumAI 导入 ticket 和手动创建 ticket。手动 ticket 没有 `**Task ID:**` 等 export markers 也会被支持；如果某个场景只想处理 ScrumAI 导入 ticket，可显式加 `--scrumai-only`。
 
 ### 辅助 CLI
 
@@ -756,6 +786,64 @@ Vibe Kanban API is not reachable. Start Vibe Kanban with: npx vibe-kanban
 ### Codex executor 不可用
 
 `start_workspace` 失败时打印 MCP 错误，并保持 issue 状态不变。不要自动改回 `Todo`，避免隐藏真实问题。
+
+### Codex model 不兼容
+
+如果 Vibe Kanban UI 或 session log 中出现：
+
+```text
+Error: {"type":"error","status":400,"error":{"type":"invalid_request_error","message":"The 'gpt-5.5' model requires a newer version of Codex. Please upgrade to the latest app or CLI and try again."}}
+```
+
+不要直接升级到 `vibe-kanban@0.1.44`。该版本当前不可用；`mcp_adapter.py` 仍应固定使用可用的 `vibe-kanban@0.1.43`。
+
+已确认的根因是：`vibe-kanban@0.1.43` 启动的不是系统里的新版 `codex` CLI，而是它自己的 embedded Codex executor。例如日志中会看到：
+
+```text
+userAgent: vibe-codex-executor/0.121.0 ... (vibe-codex-executor; 0.1.43)
+cliVersion: 0.121.0
+codexHome: /Users/leo/.codex
+model: gpt-5.5
+```
+
+这说明 Vibe 的旧 executor 从 `~/.codex/config.toml` 读取了默认模型 `gpt-5.5`。即使本机 `codex --version` 已经是更新版本，Vibe 仍可能使用旧 executor，因此错误不会通过升级系统 CLI 自动消失。
+
+处理方式：
+
+1. 检查 Codex 全局配置：
+
+```bash
+sed -n '1,20p' ~/.codex/config.toml
+```
+
+2. 如果第一行是 `model = "gpt-5.5"`，改成旧 executor 可用的模型，例如：
+
+```toml
+model = "gpt-5.4"
+```
+
+3. 清理失败 workspace 和 mapping，避免 watcher 因旧记录跳过重试：
+
+```bash
+uv run python main.py delete-kanban-workspace \
+  --workspace-id <failed-workspace-id> \
+  --delete-remote \
+  --delete-branches \
+  --yes
+```
+
+然后从 `kanban_workspace_mapping.json` 中删除对应 issue 的记录。
+
+4. 重新运行 `auto-workspace`，再检查最新 Vibe process log。成功时应看到类似：
+
+```text
+cliVersion: 0.121.0
+model: gpt-5.4
+```
+
+并且不再出现 `The 'gpt-5.5' model requires a newer version of Codex`。
+
+注意：`auto-workspace --codex-model gpt-5.4` 可以记录期望模型并传给 MCP，但在 `vibe-kanban@0.1.43` 上，实际 Codex executor 仍可能优先读取 `~/.codex/config.toml`。因此遇到该兼容错误时，优先修正 `~/.codex/config.toml`。
 
 ### Agent execution 失败
 

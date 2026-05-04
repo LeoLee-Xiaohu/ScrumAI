@@ -491,6 +491,7 @@ class McpClient:
         prompt: str = None,
         issue_id: str = None,
         variant: str = None,
+        model_id: str = None,
     ) -> dict:
         params = {
             "name": name,
@@ -508,6 +509,11 @@ class McpClient:
             params["issue_id"] = issue_id
         if variant:
             params["variant"] = variant
+        if model_id:
+            params["executor_config"] = {
+                "executor": executor,
+                "model_id": model_id,
+            }
 
         try:
             result = self.call_tool("start_workspace", params)
@@ -529,11 +535,13 @@ class McpClient:
             )
             data = self._parse_tool_json(result)
             if result.get("isError") or data.get("success") is False:
-                return False
+                error = data.get("error") or "unknown error"
+                details = data.get("details")
+                raise RuntimeError(f"{error}" + (f": {details}" if details else ""))
             return True
         except Exception as e:
             logger.error(f"Failed to link workspace {workspace_id} to issue {issue_id}: {e}")
-        return False
+            raise
 
     def get_execution(self, execution_id: str) -> dict:
         try:

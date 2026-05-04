@@ -588,6 +588,10 @@ Examples:
         help="Vibe Kanban executor/model to use (default: CODEX)",
     )
     p_auto_workspace.add_argument(
+        "--codex-model", default="gpt-5.4",
+        help="Codex model ID to use when --executor CODEX (default: gpt-5.4)",
+    )
+    p_auto_workspace.add_argument(
         "--github-repo",
         help="GitHub repo for PRs in owner/repo format (defaults to repo origin remote when inferable)",
     )
@@ -612,8 +616,8 @@ Examples:
         help="Path to issue -> workspace/PR mapping file",
     )
     p_auto_workspace.add_argument(
-        "--interval", type=int, default=5,
-        help="Poll interval in seconds (default: 5)",
+        "--interval", type=int, default=1,
+        help="Poll interval in seconds (default: 1)",
     )
     p_auto_workspace.add_argument(
         "--once", action="store_true",
@@ -626,6 +630,14 @@ Examples:
     p_auto_workspace.add_argument(
         "--include-existing-in-progress", action="store_true",
         help="Also process issues already in In progress on watcher startup",
+    )
+    p_auto_workspace.add_argument(
+        "--include-manual-issues", action="store_true",
+        help="Deprecated: manual issues are supported by default",
+    )
+    p_auto_workspace.add_argument(
+        "--scrumai-only", action="store_true",
+        help="Only process ScrumAI-exported issues with export markers/title pattern",
     )
     p_auto_workspace.set_defaults(func=cmd_auto_workspace)
 

@@ -30,12 +30,15 @@ COMPLETED_EXECUTION_STATUSES = {"completed", "complete", "succeeded", "success"}
 
 def run_auto_workspace(args) -> bool:
     mapping_path = Path(getattr(args, "mapping", "kanban_workspace_mapping.json"))
-    interval = max(1, int(getattr(args, "interval", 5) or 5))
+    interval = max(1, int(getattr(args, "interval", 1) or 1))
     run_once = bool(getattr(args, "once", False))
     dry_run = bool(getattr(args, "dry_run", False))
     skip_pr = bool(getattr(args, "skip_pr", False))
     include_existing = bool(getattr(args, "include_existing_in_progress", False))
+    include_manual_issues = not bool(getattr(args, "scrumai_only", False))
     executor = (getattr(args, "executor", "CODEX") or "CODEX").upper()
+    codex_model = getattr(args, "codex_model", "gpt-5.4") or "gpt-5.4"
+    executor_model_id = codex_model if executor == "CODEX" else None
     base_branch = getattr(args, "base_branch", "main") or "main"
     pr_base = getattr(args, "pr_base", None) or base_branch
     review_status = getattr(args, "review_status", "In review") or "In review"
@@ -83,6 +86,7 @@ def run_auto_workspace(args) -> bool:
             organization_id=org.id,
             repo=repo,
             executor=executor,
+            executor_model_id=executor_model_id,
             base_branch=base_branch,
             github_repo=github_repo,
             pr_base=pr_base,
@@ -91,12 +95,19 @@ def run_auto_workspace(args) -> bool:
 
         print(f"Watching project '{project.name}' for issues entering In progress")
         print(f"Workspace repo: {_repo_label(repo)}")
-        print(f"Executor: {executor}; base branch: {base_branch}")
+        executor_label = executor
+        if executor_model_id:
+            executor_label = f"{executor} ({executor_model_id})"
+        print(f"Executor: {executor_label}; base branch: {base_branch}")
         if skip_pr:
             print("PR automation: disabled via --skip-pr")
         else:
             print(f"PR target: {github_repo}; review status: {review_status}")
         print(f"Mode: {'dry-run, ' if dry_run else ''}{'single scan' if run_once else f'continuous (every {interval}s)'}")
+        issue_filter = "ScrumAI-exported and manually created issues"
+        if not include_manual_issues:
+            issue_filter = "ScrumAI-exported issues only"
+        print(f"Issue filter: {issue_filter}")
         print("Press Ctrl+C to stop.\n")
 
         previous_status_by_issue_id: dict[str, str] = {}
@@ -115,7 +126,7 @@ def run_auto_workspace(args) -> bool:
                     current_status in IN_PROGRESS_STATUSES
                     and previous_status not in IN_PROGRESS_STATUSES
                     and not _record_has_workspace(record)
-                    and _is_scrumai_issue(client, issue)
+                    and _is_supported_issue(client, issue, include_manual_issues)
                 )
                 if first_tick and not include_existing and current_status in IN_PROGRESS_STATUSES:
                     should_start_workspace = False
@@ -126,12 +137,28 @@ def run_auto_workspace(args) -> bool:
                         issue=issue,
                         repo=repo,
                         executor=executor,
+                        executor_model_id=executor_model_id,
                         base_branch=base_branch,
                         mapping=mapping,
                         mapping_path=mapping_path,
                         dry_run=dry_run,
                     ):
                         return False
+
+                record = _issue_records(mapping).get(issue.id)
+                if (
+                    _record_has_workspace(record)
+                    and not record.get("issue_linked")
+                    and not record.get("issue_link_failed_at")
+                ):
+                    _ensure_workspace_issue_link(
+                        client=client,
+                        issue=issue,
+                        record=record,
+                        mapping=mapping,
+                        mapping_path=mapping_path,
+                        dry_run=dry_run,
+                    )
 
                 if not skip_pr:
                     record = _issue_records(mapping).get(issue.id)
@@ -214,6 +241,7 @@ def _ensure_mapping_header(
     organization_id: str,
     repo: dict[str, Any],
     executor: str,
+    executor_model_id: str | None,
     base_branch: str,
     github_repo: str | None,
     pr_base: str,
@@ -225,6 +253,8 @@ def _ensure_mapping_header(
     mapping["repo_name"] = repo.get("name") or Path(str(repo.get("path", ""))).name
     mapping["repo_path"] = repo.get("path")
     mapping["executor"] = executor
+    if executor_model_id:
+        mapping["executor_model_id"] = executor_model_id
     mapping["base_branch"] = base_branch
     if github_repo:
         owner, name = github_repo.split("/", 1)
@@ -319,6 +349,12 @@ def _normalize_status(status: str | None) -> str:
     return (status or "").strip().lower().replace("-", " ").replace("_", " ")
 
 
+def _is_supported_issue(client: McpClient, issue: McpIssue, include_manual_issues: bool) -> bool:
+    if include_manual_issues:
+        return True
+    return _is_scrumai_issue(client, issue)
+
+
 def _is_scrumai_issue(client: McpClient, issue: McpIssue) -> bool:
     details = client.get_issue(issue.id)
     description = details.get("description") if isinstance(details, dict) else None
@@ -336,6 +372,7 @@ def _start_issue_workspace(
     issue: McpIssue,
     repo: dict[str, Any],
     executor: str,
+    executor_model_id: str | None,
     base_branch: str,
     mapping: dict[str, Any],
     mapping_path: Path,
@@ -350,6 +387,8 @@ def _start_issue_workspace(
         "issue_title": issue.title,
         "repo_id": repo.get("id"),
         "base_branch": base_branch,
+        "executor": executor,
+        "executor_model_id": executor_model_id,
         "started_at": now,
     }
     _save_mapping(mapping_path, mapping)
@@ -359,7 +398,10 @@ def _start_issue_workspace(
     print(f"[workspace] {issue.title}: In progress detected")
 
     if dry_run:
-        print(f"[dry-run] would start workspace with executor={executor}, repo_id={repo.get('id')}, branch={base_branch}")
+        print(
+            f"[dry-run] would start workspace with executor={executor}, "
+            f"model_id={executor_model_id}, repo_id={repo.get('id')}, branch={base_branch}"
+        )
         records[issue.id].update({
             "state": "dry_run",
             "dry_run_at": _utc_now(),
@@ -375,6 +417,7 @@ def _start_issue_workspace(
             repo_id=str(repo.get("id")),
             branch=base_branch,
             issue_id=issue.id,
+            model_id=executor_model_id,
         )
     except Exception as e:
         records[issue.id].update({
@@ -411,9 +454,56 @@ def _start_issue_workspace(
         "created_at": _utc_now(),
         "start_workspace_response": result,
     })
+    _ensure_workspace_issue_link(
+        client=client,
+        issue=issue,
+        record=records[issue.id],
+        mapping=mapping,
+        mapping_path=mapping_path,
+        dry_run=False,
+    )
     _save_mapping(mapping_path, mapping)
     print(f"[workspace] created for {issue.title}: workspace_id={workspace_id}, execution_id={execution_id}")
     return True
+
+
+def _ensure_workspace_issue_link(
+    client: McpClient,
+    issue: McpIssue,
+    record: dict[str, Any] | None,
+    mapping: dict[str, Any],
+    mapping_path: Path,
+    dry_run: bool,
+) -> bool:
+    if not record:
+        return False
+    workspace_id = record.get("workspace_id")
+    if not workspace_id:
+        return False
+    if dry_run:
+        record["issue_linked"] = False
+        record["issue_link_dry_run_at"] = _utc_now()
+        _save_mapping(mapping_path, mapping)
+        return True
+    linked = False
+    try:
+        linked = client.link_workspace_issue(str(workspace_id), issue.id)
+    except Exception as e:
+        link_error = str(e)
+    else:
+        link_error = ""
+    if linked:
+        record["issue_linked"] = True
+        record["issue_linked_at"] = _utc_now()
+        record.pop("issue_link_error", None)
+        _save_mapping(mapping_path, mapping)
+        return True
+    record["issue_linked"] = False
+    record["issue_link_error"] = link_error or "link_workspace_issue returned false"
+    record["issue_link_failed_at"] = _utc_now()
+    _save_mapping(mapping_path, mapping)
+    print(f"[warn] workspace {workspace_id} was created but could not be linked to {issue.title}")
+    return False
 
 
 def _build_workspace_prompt(issue: McpIssue, details: dict[str, Any]) -> str:
