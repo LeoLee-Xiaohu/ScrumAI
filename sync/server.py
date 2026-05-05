@@ -114,6 +114,14 @@ async def _poll_loop(state: ServerState) -> None:
     could land mid-cold-sleep and the next background tick would still be
     delayed by up to `cold_interval` instead of `hot_interval`.
     """
+    # Fire the first tick immediately. With `last_write_at=None` on a fresh
+    # process, `next_interval_seconds()` returns the cold interval (300s),
+    # so without this pre-set the very first `wait_for` would sit idle for
+    # up to 5 minutes before any sync — defeating the polling safety net
+    # right when it matters most (process restart, recovery from crash).
+    # Pre-setting the event causes the first iteration's `wait_for` to
+    # return immediately; `clear()` re-arms it for normal cadence.
+    state.poll_wake.set()
     while True:
         interval = state.engine.next_interval_seconds()
         # `wait_for(event.wait())` returns when the event is set OR the
