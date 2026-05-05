@@ -335,6 +335,63 @@ def test_tick_does_not_set_poll_wake_on_no_op() -> None:
     assert not state.poll_wake.is_set()
 
 
+# ----- poll_loop cold-start behavior -----
+
+
+def test_poll_loop_runs_first_tick_immediately() -> None:
+    """A fresh poll loop must tick once before entering the cold sleep.
+
+    Regression for https://github.com/LeoLee-Xiaohu/ScrumAI/pull/20#discussion_r3180061287:
+    on cold start `last_write_at=None` => `next_interval_seconds()` returns
+    cold_interval (300s default), so a wait-then-tick loop would leave a
+    fresh server unsynced for up to 5 minutes. We pre-set `poll_wake` so the
+    first `wait_for` returns immediately and the safety-net tick fires now.
+    """
+    import asyncio
+    from sync.server import ServerState, _poll_loop
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        if req.url.path == "/rest/api/3/search/jql":
+            return httpx.Response(200, json={"issues": []})
+        return httpx.Response(404)
+
+    engine, jira = make_engine(handler)
+    # 1-hour cold interval — without the fix, the first tick wouldn't fire
+    # for the entire test run, so `tick_count == 0` would prove the bug.
+    engine._cold_interval = 3600.0
+
+    tick_count = 0
+    real_tick = engine.tick
+
+    def counted_tick() -> TickReport:
+        nonlocal tick_count
+        tick_count += 1
+        return real_tick()
+
+    engine.tick = counted_tick  # type: ignore[method-assign]
+
+    async def drive() -> None:
+        state = ServerState(engine=engine, api_key="")
+        task = asyncio.create_task(_poll_loop(state))
+        # Yield long enough for the first tick to complete. `to_thread`
+        # offloads the sync engine, so we need a couple of event-loop
+        # turns plus the thread roundtrip.
+        for _ in range(20):
+            await asyncio.sleep(0.05)
+            if tick_count >= 1:
+                break
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+    with jira:
+        asyncio.run(drive())
+
+    assert tick_count >= 1, "poll loop did not run the first tick within 1s"
+
+
 # ----- helper coverage -----
 
 
