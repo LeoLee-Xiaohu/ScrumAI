@@ -25,13 +25,14 @@ import logging
 import signal
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from jira_client import JiraClient
 from mcp_adapter import McpClient
 
-from .jira_to_vk import JiraToVkSyncer
-from .vk_to_jira import VkToJiraSyncer
+from .jira_to_vk import JiraToVkSyncer, SyncStats
+from .vk_to_jira import VkSyncStats, VkToJiraSyncer
 
 logger = logging.getLogger(__name__)
 
@@ -105,7 +106,16 @@ class TickReport:
 
 
 class SyncEngine:
-    """Owns both syncers + ledger; drives a polling loop with graceful shutdown."""
+    """Owns both syncers + ledger; drives a polling loop with graceful shutdown.
+
+    Adaptive polling: when a write happened within `hot_window_seconds`, the
+    next sleep is `hot_interval_seconds` (default 30s). Past that, polling
+    drops to `cold_interval_seconds` (default 300s). Both polling ticks and
+    HTTP-triggered targeted ticks (`tick_for_key`) update the write
+    timestamp, so a Forge-driven status change keeps the loop responsive
+    for an hour, then quiets down. Set `hot_interval == cold_interval` to
+    pin a fixed cadence (used in tests and in `--once` mode).
+    """
 
     def __init__(
         self,
@@ -116,12 +126,27 @@ class SyncEngine:
         vk_project_id: str,
         interval_seconds: float = 30.0,
         ledger_ttl_seconds: float = 90.0,
+        hot_interval_seconds: float | None = None,
+        cold_interval_seconds: float | None = None,
+        hot_window_seconds: float = 3600.0,
     ) -> None:
         self._jira = jira
         self._mcp = mcp
-        self._interval = interval_seconds
+        # `interval_seconds` is the legacy fixed cadence; default both hot
+        # and cold to it when adaptive params aren't passed, so existing
+        # call sites and tests keep their old behavior.
+        self._hot_interval = (
+            hot_interval_seconds if hot_interval_seconds is not None else interval_seconds
+        )
+        self._cold_interval = (
+            cold_interval_seconds if cold_interval_seconds is not None else interval_seconds
+        )
+        self._hot_window = hot_window_seconds
         self._ledger = MirrorLedger(ttl_seconds=ledger_ttl_seconds)
         self._stop_event = threading.Event()
+        # Monotonic timestamp of the last tick that produced any write.
+        # `None` means "never written this process" — that counts as cold.
+        self._last_write_at: float | None = None
 
         self._jira_to_vk = JiraToVkSyncer(
             jira=jira,
@@ -135,6 +160,7 @@ class SyncEngine:
             mcp=mcp,
             vk_project_id=vk_project_id,
             ledger=self._ledger,
+            jira_project_key=jira_project_key,
         )
 
     @property
@@ -142,22 +168,44 @@ class SyncEngine:
         """Exposed for tests."""
         return self._ledger
 
+    @property
+    def last_write_at(self) -> float | None:
+        """Monotonic time of the last write, or None if nothing has been
+        written yet this process lifetime. Exposed for tests + observability.
+        """
+        return self._last_write_at
+
+    def next_interval_seconds(self) -> float:
+        """How long the polling loop should sleep before the next tick.
+
+        Hot when we wrote within `hot_window_seconds`, cold otherwise.
+        Cold start (no writes yet) is treated as cold — there's no recent
+        evidence the system is busy, so don't spam Jira/VK.
+        """
+        if self._last_write_at is None:
+            return self._cold_interval
+        age = time.monotonic() - self._last_write_at
+        return self._hot_interval if age < self._hot_window else self._cold_interval
+
     def stop(self) -> None:
         """Signal the run_loop to exit at the next iteration boundary."""
         self._stop_event.set()
 
-    def tick(self) -> TickReport:
-        """Run one Jira->VK + VK->Jira pass. Order is intentional.
+    def _run_directional(
+        self,
+        report: TickReport,
+        *,
+        j2v_call: Callable[[], SyncStats],
+        v2j_call: Callable[[], VkSyncStats],
+    ) -> TickReport:
+        """Run both syncer halves with shared error wrapping.
 
-        We run Jira->VK first because Jira is the source of truth for new
-        issues and content edits — getting VK in sync first means the
-        subsequent VK->Jira pass sees fresh VK state and won't push stale
-        deltas backwards.
+        Used by `tick()` (full sweep) and `tick_for_key()` (targeted) — the
+        only difference between them is which method on each syncer is
+        invoked, so we factor that out to a callable.
         """
-        report = TickReport()
-
         try:
-            j2v = self._jira_to_vk.tick()
+            j2v = j2v_call()
             report.jira_to_vk_created = j2v.created
             report.jira_to_vk_updated = j2v.updated_status + j2v.updated_content
             report.jira_to_vk_skipped = j2v.skipped_unchanged + j2v.skipped_unsupported
@@ -167,7 +215,7 @@ class SyncEngine:
             report.jira_to_vk_errors += 1
 
         try:
-            v2j = self._vk_to_jira.tick()
+            v2j = v2j_call()
             report.vk_to_jira_transitioned = v2j.transitioned
             report.vk_to_jira_skipped = (
                 v2j.skipped_unchanged + v2j.skipped_unsupported + v2j.skipped_orphan
@@ -177,10 +225,42 @@ class SyncEngine:
             logger.exception("VK->Jira tick crashed: %s", e)
             report.vk_to_jira_errors += 1
 
+        if report.total_writes() > 0:
+            self._last_write_at = time.monotonic()
+
         return report
 
+    def tick(self) -> TickReport:
+        """Run one Jira->VK + VK->Jira full sweep. Order is intentional.
+
+        We run Jira->VK first because Jira is the source of truth for new
+        issues and content edits — getting VK in sync first means the
+        subsequent VK->Jira pass sees fresh VK state and won't push stale
+        deltas backwards.
+        """
+        return self._run_directional(
+            TickReport(),
+            j2v_call=self._jira_to_vk.tick,
+            v2j_call=self._vk_to_jira.tick,
+        )
+
+    def tick_for_key(self, jira_key: str) -> TickReport:
+        """Run a targeted sync for a single Jira key.
+
+        Same Jira->VK then VK->Jira ordering as `tick()`, but each side only
+        touches the requested key. Used by the HTTP API to give Forge a
+        sub-second sync after a user action — much cheaper than a full
+        project scan, and Jira `get_issue` sees freshly-changed state with
+        no `/search/jql` indexing lag.
+        """
+        return self._run_directional(
+            TickReport(),
+            j2v_call=lambda: self._jira_to_vk.tick_for_key(jira_key),
+            v2j_call=lambda: self._vk_to_jira.tick_for_key(jira_key),
+        )
+
     def run_loop(self) -> None:
-        """Tick forever (or until `stop()`), respecting the configured interval.
+        """Tick forever (or until `stop()`), with adaptive interval.
 
         Installs SIGINT/SIGTERM handlers if running on the main thread so
         Ctrl+C and `kill` cleanly drain the current tick before exiting.
@@ -188,8 +268,10 @@ class SyncEngine:
         self._install_signal_handlers()
 
         logger.info(
-            "sync engine started: interval=%.1fs project=%s",
-            self._interval,
+            "sync engine started: hot=%.1fs cold=%.1fs window=%.1fs project=%s",
+            self._hot_interval,
+            self._cold_interval,
+            self._hot_window,
             self._jira_to_vk._jira_project_key,
         )
 
@@ -199,15 +281,16 @@ class SyncEngine:
                 report = self.tick()
                 self._log_tick(report)
 
+                interval = self.next_interval_seconds()
                 # Subtract the actual tick duration so a slow tick doesn't
                 # snowball: aim for the next tick at start+interval, not
                 # at "now+interval".
                 elapsed = time.monotonic() - start
-                sleep_for = max(0.0, self._interval - elapsed)
-                if sleep_for == 0.0 and self._interval > 0:
+                sleep_for = max(0.0, interval - elapsed)
+                if sleep_for == 0.0 and interval > 0:
                     logger.warning(
                         "tick exceeded interval (%.1fs > %.1fs); running back-to-back",
-                        elapsed, self._interval,
+                        elapsed, interval,
                     )
                 # Use Event.wait so stop() interrupts mid-sleep.
                 if self._stop_event.wait(timeout=sleep_for):

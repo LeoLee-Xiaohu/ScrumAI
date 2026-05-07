@@ -327,3 +327,103 @@ def test_tick_records_to_ledger_on_transition() -> None:
         syncer.tick()
 
     assert ledger.jira_status_was_pushed("SCRUM-8", "In Progress")
+
+
+# ----- tick_for_key — targeted single-task sync -----
+
+
+def test_tick_for_key_transitions_only_matching_vk_task() -> None:
+    """Multiple VK tasks present; only the one matching the key is touched."""
+    recorder = JiraRecorder(status_by_key={"SCRUM-200": "To Do", "SCRUM-201": "Done"})
+
+    mcp = FakeMcpClient(
+        issues=[
+            McpIssue(
+                id="vk-200", simple_id="200",
+                title="[SCRUM-200] target", status="inprogress",
+            ),
+            McpIssue(
+                id="vk-201", simple_id="201",
+                title="[SCRUM-201] sibling", status="inprogress",
+            ),
+        ]
+    )
+    with make_jira_client(recorder) as jira:
+        syncer = VkToJiraSyncer(jira=jira, mcp=mcp, vk_project_id="p")
+        stats = syncer.tick_for_key("SCRUM-200")
+
+    assert stats.transitioned == 1
+    # Only SCRUM-200 was transitioned; SCRUM-201 was untouched even though
+    # its VK status also disagrees with Jira ("Done" vs "inprogress").
+    assert recorder.transitions == [("SCRUM-200", "21")]
+
+
+def test_tick_for_key_no_op_when_no_matching_vk_task() -> None:
+    """If no VK task carries the key, transitioned=0 and no Jira call.
+
+    This is the legitimate case where Jira->VK hasn't created a mirror yet
+    (e.g., new ticket, polling hasn't fired). The targeted endpoint must
+    not error out — Jira->VK side handles creation.
+    """
+    recorder = JiraRecorder(status_by_key={"SCRUM-300": "To Do"})
+
+    mcp = FakeMcpClient(
+        issues=[
+            McpIssue(
+                id="vk-other", simple_id="o",
+                title="[SCRUM-1] unrelated", status="todo",
+            ),
+        ]
+    )
+    with make_jira_client(recorder) as jira:
+        syncer = VkToJiraSyncer(jira=jira, mcp=mcp, vk_project_id="p")
+        stats = syncer.tick_for_key("SCRUM-300")
+
+    assert stats.transitioned == 0
+    assert stats.skipped_orphan == 0  # filter happens before counting
+    assert recorder.transitions == []
+
+
+def test_tick_for_key_records_error_on_vk_list_failure() -> None:
+    """If MCP list_all_issues raises, error is recorded, no Jira call."""
+    class _BoomMcp(FakeMcpClient):
+        def list_all_issues(self, *a, **kw):  # type: ignore[override]
+            raise RuntimeError("mcp transport down")
+
+    recorder = JiraRecorder(status_by_key={})
+    mcp = _BoomMcp()
+    with make_jira_client(recorder) as jira:
+        syncer = VkToJiraSyncer(jira=jira, mcp=mcp, vk_project_id="p")
+        stats = syncer.tick_for_key("SCRUM-400")
+
+    assert stats.errors == 1
+    assert recorder.transitions == []
+
+
+def test_tick_for_key_refuses_keys_outside_configured_project() -> None:
+    """Symmetric to JiraToVkSyncer.tick_for_key: if a jira_project_key is
+    configured, a key from a different project must NOT touch Jira or VK.
+
+    Without this, a misrouted `POST /sync/tick/OTHER-1` against a SCRUM-tied
+    server could still transition a wrong-project Jira issue when a stray
+    `[OTHER-1] ...` task happens to exist in VK.
+    """
+    recorder = JiraRecorder(status_by_key={"OTHER-1": "To Do"})
+
+    mcp = FakeMcpClient(
+        issues=[
+            McpIssue(
+                id="vk-other", simple_id="o",
+                title="[OTHER-1] stray", status="inprogress",
+            ),
+        ]
+    )
+    with make_jira_client(recorder) as jira:
+        syncer = VkToJiraSyncer(
+            jira=jira, mcp=mcp, vk_project_id="p", jira_project_key="SCRUM"
+        )
+        stats = syncer.tick_for_key("OTHER-1")
+
+    assert stats.skipped_unsupported == 1
+    assert stats.transitioned == 0
+    assert recorder.transitions == []  # no Jira write attempted at all
