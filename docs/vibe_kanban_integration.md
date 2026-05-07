@@ -17,9 +17,9 @@ This guide explains how to connect **ScrumAI** with **Vibe Kanban** to transform
 Run your usual ScrumAI workflow to generate the decomposed tasks and dispatch results:
 
 ```bash
-uv run python main.py decompose -t "Your Goal Description"
-uv run python main.py dispatch
-uv run python main.py evaluate-dispatch
+uv run main.py decompose -t "Your Goal Description"
+uv run main.py dispatch
+uv run main.py evaluate-dispatch
 ```
 
 ### Step 2: Start Vibe Kanban
@@ -38,7 +38,7 @@ Wait for it to open in your browser, then:
 ### Step 3: Export to Vibe Kanban
 
 ```bash
-uv run python main.py export-kanban --project-name "Your Project Name"
+uv run main.py export-kanban --project-name "Your Project Name"
 ```
 
 **Options:**
@@ -74,8 +74,8 @@ The script checks for existing tasks by title within the specified project. If a
 
 ```bash
 # Full workflow
-uv run python main.py decompose -t "Your goal"
-uv run python main.py dispatch
-uv run python main.py evaluate-dispatch
-uv run python main.py export-kanban --project-name "Your Project"
+uv run main.py decompose -t "Your goal"
+uv run main.py dispatch
+uv run main.py evaluate-dispatch
+uv run main.py export-kanban --project-name "Your Project"
 ```

@@ -3,10 +3,10 @@
 Mirrors the existing main.py functionality with structured output validation.
 
 Usage:
-    python main.py decompose -f goal.md
-    python main.py decompose -t "Build a REST API for user management"
-    python main.py decompose -t "Add OAuth login" --repo-url https://github.com/owner/repo
-    python main.py decompose -t "Add payment feature" --repo owner/repo --branch develop
+    uv run main.py decompose -f goal.md
+    uv run main.py decompose -t "Build a REST API for user management"
+    uv run main.py decompose -t "Add OAuth login" --repo-url https://github.com/owner/repo
+    uv run main.py decompose -t "Add payment feature" --repo owner/repo --branch develop
 """
 
 import json

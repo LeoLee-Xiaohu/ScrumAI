@@ -6,9 +6,9 @@ LLM evaluation framework:
   Step 2: Role classification → recommended_role
 
 Usage:
-    python main.py dispatch
-    python main.py dispatch -f decomposed_task.json
-    python main.py dispatch -f tasks.json -o dispatched.json
+    uv run main.py dispatch
+    uv run main.py dispatch -f decomposed_task.json
+    uv run main.py dispatch -f tasks.json -o dispatched.json
 """
 
 import json
@@ -109,7 +109,7 @@ def run_dispatch(
     if not input_path.exists():
         logger.error("Input file not found: %s", input_file)
         print(f"\n{RED}Error: File not found: {input_file}{RESET}")
-        print(f"{DIM}Run 'python main.py decompose' first to generate tasks.{RESET}")
+        print(f"{DIM}Run 'uv run main.py decompose' first to generate tasks.{RESET}")
         return
 
     with open(input_path) as f:

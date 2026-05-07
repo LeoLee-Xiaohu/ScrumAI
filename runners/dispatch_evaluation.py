@@ -4,9 +4,9 @@ Evaluates the accuracy of role dispatch results by comparing them to
 original task assignments and validating scoring framework consistency.
 
 Usage:
-    python main.py evaluate-dispatch
-    python main.py evaluate-dispatch -i decomposed_task.json -d dispatched_task.json
-    python main.py evaluate-dispatch -i tasks.json -d dispatch.json -o evaluation.json
+    uv run main.py evaluate-dispatch
+    uv run main.py evaluate-dispatch -i decomposed_task.json -d dispatched_task.json
+    uv run main.py evaluate-dispatch -i tasks.json -d dispatch.json -o evaluation.json
 """
 
 import json
@@ -133,13 +133,13 @@ def run_evaluation(
     if not decomposed_path.exists():
         logger.error("Decomposed file not found: %s", decomposed_file)
         print(f"\n{RED}Error: File not found: {decomposed_file}{RESET}")
-        print(f"{DIM}Run 'python main.py decompose' first to generate tasks.{RESET}")
+        print(f"{DIM}Run 'uv run main.py decompose' first to generate tasks.{RESET}")
         return
     
     if not dispatched_path.exists():
         logger.error("Dispatched file not found: %s", dispatched_file)
         print(f"\n{RED}Error: File not found: {dispatched_file}{RESET}")
-        print(f"{DIM}Run 'python main.py dispatch' first to generate role assignments.{RESET}")
+        print(f"{DIM}Run 'uv run main.py dispatch' first to generate role assignments.{RESET}")
         return
 
     # Load both files

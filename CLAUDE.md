@@ -38,11 +38,11 @@ Pydantic models mirror TypeScript types from `scrumai-forge`:
 
 ```bash
 uv sync                                    # Install dependencies
-python main.py brainstorm                  # Interactive brainstorm
-python main.py brainstorm -f ticket.md     # With ticket context
-python main.py score -f ticket.md          # Score issue readiness
-python main.py decompose -t "Build X"      # Decompose a goal
-python main.py prompts                     # List available prompts
+uv run main.py brainstorm                  # Interactive brainstorm
+uv run main.py brainstorm -f ticket.md     # With ticket context
+uv run main.py score -f ticket.md          # Score issue readiness
+uv run main.py decompose -t "Build X"      # Decompose a goal
+uv run main.py prompts                     # List available prompts
 ```
 
 ## Adding New Prompts

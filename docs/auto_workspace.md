@@ -2,20 +2,20 @@
 
 ## 目标
 
-当前从 ScrumAI 导入 tickets 到 Vibe Kanban 后，需要人工打开 ticket 并创建 workspace 才能开始 vibe coding。目标是新增一个自动化流程：
+当前从 ScrumAI 导入 tickets 到 Vibe Kanban 后，可以通过 `auto-workspace` 自动创建 workspace 并衔接 PR/review 流程：
 
 1. 监听 Vibe Kanban 中 ScrumAI 导入的 issue ticket。
-2. 当 ticket 从 `Todo` / `To do` 移动到 `In Progress` / `In progress` 时，自动创建 workspace。
+2. 当 ticket 从 `Todo` / `To do` 移动到 `In Progress` / `In progress` / `In process` 时，自动创建 workspace。
 3. workspace 默认使用 `CODEX` executor。
 4. workspace 的 repository base branch 默认使用 `origin/main` 对应的 `main` 分支。
 5. workspace 创建后立即启动首个 coding session，让 agent 按 ticket 内容执行。
 6. 当 code agent 完成开发后，自动创建 GitHub PR，并把 ticket 移动到 `In review`。
 
-本文只给方案，不执行代码。
+本文描述当前已经实现的 `auto-workspace` watcher 及其使用方式。
 
 ## 结论
 
-推荐实现一个新的 ScrumAI watcher：`auto-workspace`。它复用现有 `McpClient`，通过 Vibe Kanban MCP 轮询 issue 状态变化；一旦发现目标 issue 进入 `In progress`，调用 Vibe Kanban MCP 的 `start_workspace` 工具创建 workspace，并把 issue 与 workspace 关联。随后继续监控该 workspace 的 agent execution；当 execution 成功完成后，推送 workspace 分支到 GitHub、创建 PR，并把 issue 移动到 `In review`。
+`auto-workspace` 复用现有 `McpClient`，通过 Vibe Kanban MCP 轮询 issue 状态变化；一旦发现目标 issue 进入 `In progress` / `In process`，调用 Vibe Kanban MCP 的 `start_workspace` 工具创建 workspace，并把 issue 与 workspace 关联。随后继续监控该 workspace 的 agent execution；当 execution 成功完成后，推送 workspace 分支到 GitHub、创建 PR，并把 issue 移动到 `In review`。
 
 现有 MCP 工具已经支持这条路径：
 
@@ -23,37 +23,37 @@
 - `get_issue`: 获取 issue title / description。
 - `list_repos`: 获取 Vibe Kanban 已注册 repo。
 - `start_workspace`: 创建 workspace 并启动 first session。
-- `link_workspace_issue`: 将 workspace 与 issue 关联，作为补偿步骤。
+- `link_workspace_issue`: 将 workspace 与 issue 关联，作为补偿步骤；`409 Conflict` 会按“已关联”处理。
 - `list_workspaces`: 用于幂等检查，避免重复创建 workspace。
 - `get_execution`: 获取 agent execution 状态，用于判断开发是否完成。
-- `update_issue`: 将完成开发的 issue 从 `In progress` 移动到 `In review`。
+- `update_issue`: 将完成开发的 issue 从进行中状态移动到 `In review`。
 
-GitHub PR 创建不在当前 Vibe Kanban MCP 工具列表中，建议通过 GitHub CLI `gh pr create` 或 GitHub REST API 实现。MVP 优先使用 `gh`，因为它能复用本机 GitHub 登录态，落地成本最低。
+GitHub PR 创建不在当前 Vibe Kanban MCP 工具列表中，当前实现使用 GitHub CLI `gh pr create`，复用本机 GitHub 登录态。
 
 ## 用户流程
 
 1. 用户运行现有导入流程：
 
 ```bash
-uv run python main.py deploy --project-name "ScrumAI Project" --no-watch
+uv run main.py deploy --project-name "ScrumAI Project" --no-watch
 ```
 
 2. 用户启动自动 workspace watcher：
 
 ```bash
-uv run python main.py auto-workspace \
+uv run main.py auto-workspace \
   --project-name "ScrumAI Project" \
   --repo-name "ScrumAI" \
   --base-branch main \
   --executor CODEX
 ```
 
-3. 用户在 Vibe Kanban UI 中把 ticket 从 `Todo` / `To do` 拖到 `In progress`。
+3. 用户在 Vibe Kanban UI 中把 ticket 从 `Todo` / `To do` 拖到 `In progress` 或 `In process`。
 4. watcher 检测到状态变化，自动创建 workspace。
 5. Vibe Kanban 中出现 linked workspace，并且 Codex session 开始执行 ticket。
 6. watcher 继续轮询 workspace 对应的 `execution_id`。
 7. 当 Codex execution 成功结束，watcher 在 workspace 分支上创建 GitHub PR。
-8. watcher 将 ticket 从 `In progress` 移动到 `In review`，并把 PR URL 写入 mapping；后续人工 review / merge。
+8. watcher 将 ticket 从进行中状态移动到 `In review`，并把 PR URL 写入 mapping；后续人工 review / merge。
 
 ## 状态触发规则
 
@@ -61,8 +61,8 @@ uv run python main.py auto-workspace \
 
 只对满足以下条件的 issue 创建 workspace：
 
-- issue 当前状态是 `In progress` 或 `In Progress`。
-- issue 之前在 watcher 本地状态中不是 `In progress`。
+- issue 当前状态是 `In progress`、`In Progress`、`In process` 或 `In Process`。
+- issue 之前在 watcher 本地状态中不是进行中状态。
 - issue 是 ScrumAI 导入的 ticket，或手动创建的 ticket。
 - issue 尚未创建过 workspace。
 
@@ -82,12 +82,12 @@ uv run python main.py auto-workspace \
 
 ### 手动 ticket 支持
 
-默认处理手动创建的 ticket。watcher 不要求 ScrumAI markers；任何进入 `In progress` 且尚未创建 workspace 的 issue 都会触发 workspace 创建。
+默认处理手动创建的 ticket。watcher 不要求 ScrumAI markers；任何进入 `In progress` / `In process` 且尚未创建 workspace 的 issue 都会触发 workspace 创建。
 
 如果只想处理 ScrumAI 导入 ticket，可使用：
 
 ```bash
-uv run python main.py auto-workspace \
+uv run main.py auto-workspace \
   --project-name "NeckPacMan" \
   --repo-id <repo-id> \
   --scrumai-only
@@ -96,7 +96,7 @@ uv run python main.py auto-workspace \
 建议配合 `--dry-run --once` 先确认会触发哪些 ticket：
 
 ```bash
-uv run python main.py auto-workspace \
+uv run main.py auto-workspace \
   --project-name "NeckPacMan" \
   --repo-id <repo-id> \
   --include-existing-in-progress \
@@ -104,11 +104,11 @@ uv run python main.py auto-workspace \
   --once
 ```
 
-手动 ticket 的 title / description 会直接作为 Codex prompt 上下文。建议手动 ticket 至少包含目标行为、验收标准、相关文件或复现步骤，以及不应修改的边界。
+手动 ticket 的 title / description 会直接作为 Codex prompt 上下文。手动 ticket 至少应包含目标行为、验收标准、相关文件或复现步骤，以及不应修改的边界。
 
-### 为什么监听 `Todo -> In progress`
+### 为什么监听 `Todo -> In progress/In process`
 
-`In progress` 是用户明确表达“现在可以开始做”的动作，比导入时立即执行更安全：
+`In progress` / `In process` 是用户明确表达“现在可以开始做”的动作，比导入时立即执行更安全：
 
 - 避免所有导入 ticket 同时启动 agent。
 - 保留人工排期能力。
@@ -118,8 +118,8 @@ uv run python main.py auto-workspace \
 
 只对满足以下条件的 workspace 创建 PR 并移动 ticket：
 
-- issue 当前状态仍是 `In progress`。
-- mapping 中已有该 issue 对应的 `workspace_id` 和 `execution_id`。
+- issue 当前状态仍是进行中状态。
+- mapping 中已有该 issue 对应的 `workspace_id`，并且已有或可从 session 中恢复 `execution_id`。
 - `get_execution(execution_id)` 显示 agent execution 已成功完成。
 - workspace branch 存在可提交 / 可推送的代码变更。
 - mapping 中还没有 `pull_request.url`。
@@ -127,10 +127,10 @@ uv run python main.py auto-workspace \
 完成后执行：
 
 ```text
-In progress -> In review
+In progress/In process -> In review
 ```
 
-如果 execution 失败、被取消或无代码变更，不应移动到 `In review`。建议保留在 `In progress` 并在日志中输出失败原因，后续可以增加 `Failed` / `Blocked` 状态。
+如果 execution 失败、被取消或无代码变更，不移动到 `In review`。当前实现保留在进行中状态，并在日志和 mapping 中记录原因。
 
 ## Workspace 创建参数
 
@@ -183,7 +183,7 @@ Requirements:
 
 ## 幂等设计
 
-必须避免用户反复拖动状态时重复创建 workspace，也必须避免 agent 完成后重复创建 PR。建议新增一个 mapping 文件，例如：
+必须避免用户反复拖动状态时重复创建 workspace，也必须避免 agent 完成后重复创建 PR。当前使用 mapping 文件记录状态，例如：
 
 ```json
 {
@@ -236,10 +236,10 @@ kanban_workspace_mapping.json
 
 ## CLI 方案
 
-新增命令：
+启动命令：
 
 ```bash
-uv run python main.py auto-workspace \
+uv run main.py auto-workspace \
   --project-name "ScrumAI Project" \
   --project-id "<optional-project-uuid>" \
   --repo-name "ScrumAI" \
@@ -251,7 +251,7 @@ uv run python main.py auto-workspace \
   --interval 1
 ```
 
-参数建议：
+参数：
 
 | 参数 | 默认值 | 说明 |
 | --- | --- | --- |
@@ -280,12 +280,12 @@ uv run python main.py auto-workspace \
 
 ### 辅助 CLI
 
-为了避免 project / repo 名称重复导致无法精确选择，新增以下辅助命令。
+为了避免 project / repo 名称重复导致无法精确选择，提供以下辅助命令。
 
 列出 Vibe Kanban project ID：
 
 ```bash
-uv run python main.py list-kanban-projects
+uv run main.py list-kanban-projects
 ```
 
 输出示例：
@@ -298,7 +298,7 @@ Organization: Personal (id=<organization-id>)
 列出 Vibe Kanban repo ID：
 
 ```bash
-uv run python main.py list-kanban-repos
+uv run main.py list-kanban-repos
 ```
 
 输出示例：
@@ -311,7 +311,7 @@ uv run python main.py list-kanban-repos
 当出现重复 repo name 时，使用 `--repo-id` 启动：
 
 ```bash
-uv run python main.py auto-workspace \
+uv run main.py auto-workspace \
   --project-name "NeckPacMan" \
   --repo-id 98afbd2b-9246-4121-8a50-1d7eff091367 \
   --base-branch main
@@ -320,26 +320,26 @@ uv run python main.py auto-workspace \
 列出 workspace ID：
 
 ```bash
-uv run python main.py list-kanban-workspaces
+uv run main.py list-kanban-workspaces
 ```
 
 可选过滤：
 
 ```bash
-uv run python main.py list-kanban-workspaces --name-search NeckPacMan
-uv run python main.py list-kanban-workspaces --branch main
+uv run main.py list-kanban-workspaces --name-search NeckPacMan
+uv run main.py list-kanban-workspaces --branch main
 ```
 
 删除 workspace：
 
 ```bash
-uv run python main.py delete-kanban-workspace --workspace-id <workspace-id> --yes
+uv run main.py delete-kanban-workspace --workspace-id <workspace-id> --yes
 ```
 
 可选删除远端 workspace / workspace branches：
 
 ```bash
-uv run python main.py delete-kanban-workspace \
+uv run main.py delete-kanban-workspace \
   --workspace-id <workspace-id> \
   --delete-remote \
   --delete-branches \
@@ -349,7 +349,7 @@ uv run python main.py delete-kanban-workspace \
 删除重复的 Vibe Kanban repo registration：
 
 ```bash
-uv run python main.py delete-kanban-repo --repo-id <repo-id> --yes
+uv run main.py delete-kanban-repo --repo-id <repo-id> --yes
 ```
 
 `delete-kanban-repo` 删除的是 Vibe Kanban 本地登记的 repo 记录，不是 GitHub repository，也不会删除本地源码目录。它通过本地 Vibe Kanban backend API 执行，因为当前 MCP 工具列表只有 `list_repos` / `get_repo`，没有 `delete_repo` 工具。
@@ -363,7 +363,7 @@ VIBE_BACKEND_URL or http://127.0.0.1:63861
 如果 Vibe Kanban backend 端口不同，可以显式传入：
 
 ```bash
-uv run python main.py delete-kanban-repo \
+uv run main.py delete-kanban-repo \
   --repo-id <repo-id> \
   --backend-url http://127.0.0.1:<port> \
   --yes
@@ -373,7 +373,7 @@ uv run python main.py delete-kanban-repo \
 
 ### `mcp_adapter.py`
 
-新增 MCP client 方法：
+当前 MCP client 方法：
 
 ```python
 def list_repos(self) -> list[dict]: ...
@@ -390,12 +390,13 @@ def list_workspaces(
 def start_workspace(
     self,
     name: str,
-    prompt: str,
     executor: str,
     repo_id: str,
     branch: str,
-    issue_id: str,
+    prompt: str | None = None,
+    issue_id: str | None = None,
     variant: str | None = None,
+    model_id: str | None = None,
 ) -> dict: ...
 
 def link_workspace_issue(self, workspace_id: str, issue_id: str) -> bool: ...
@@ -412,18 +413,20 @@ def delete_workspace(
 def delete_repo(self, repo_id: str, backend_url: str | None = None) -> tuple[bool, str]: ...
 ```
 
-`start_workspace` 的返回结构需要在实现时用真实 MCP 响应确认，建议先按 dict 透传保存，解析时兼容这些字段：
+`start_workspace` 的返回结构会按 dict 透传保存到 mapping。解析时兼容这些字段：
 
 - `workspace_id`
 - `session_id`
 - `execution_id`
+- `execution_process_id`
 - `workspace.id`
 - `session.id`
 - `execution.id`
+- `execution_process.id`
 
 ### 新 GitHub/PR helper
 
-建议新增一个小的 PR helper，优先用 `gh` CLI，后续可替换为 GitHub REST API：
+当前 PR helper 使用 `gh` CLI：
 
 ```python
 def create_pull_request(
@@ -459,7 +462,7 @@ gh pr create \
 
 4. 解析 `gh pr create` 输出的 URL，写入 mapping。
 
-如果不希望依赖 `gh`，可用 GitHub REST API：
+后续如果不希望依赖 `gh`，可改为 GitHub REST API：
 
 ```http
 POST /repos/{owner}/{repo}/pulls
@@ -467,9 +470,9 @@ POST /repos/{owner}/{repo}/pulls
 
 需要 `GITHUB_TOKEN`，并传入 `title`、`head`、`base`、`body`、`draft`。
 
-### 新 runner
+### Runner
 
-新增文件：
+实现文件：
 
 ```text
 runners/auto_workspace.py
@@ -489,7 +492,7 @@ runners/auto_workspace.py
 
 ### `main.py`
 
-新增 command parser：
+已注册 command parser：
 
 ```text
 auto-workspace
@@ -513,7 +516,7 @@ def cmd_auto_workspace(args: argparse.Namespace) -> None:
 
 ## 轮询算法
 
-伪代码：
+简化逻辑：
 
 ```python
 previous_status_by_issue_id = {}
@@ -522,19 +525,19 @@ while True:
     issues = client.list_all_issues(project_id)
 
     for issue in issues:
-        if not is_scrumai_issue(issue):
+        if scrumai_only and not is_scrumai_issue(issue):
             continue
 
         current = normalize_status(issue.status)
         previous = previous_status_by_issue_id.get(issue.id)
 
         should_start = (
-            current == "in_progress"
-            and previous != "in_progress"
+            current in IN_PROGRESS_STATUSES
+            and previous not in IN_PROGRESS_STATUSES
             and not has_workspace(issue.id)
         )
 
-        if first_tick and current == "in_progress" and not include_existing:
+        if first_tick and current in IN_PROGRESS_STATUSES and not include_existing:
             should_start = False
 
         if should_start:
@@ -552,14 +555,15 @@ while True:
 
         workspace_record = mapping.issue_to_workspace.get(issue.id)
         should_create_pr = (
-            current == "in_progress"
+            current in IN_PROGRESS_STATUSES
             and workspace_record
-            and workspace_record.get("execution_id")
             and not workspace_record.get("pull_request", {}).get("url")
             and not skip_pr
         )
 
         if should_create_pr:
+            if not workspace_record.get("execution_id"):
+                recover_execution_id_from_sessions(workspace_record)
             execution = client.get_execution(workspace_record["execution_id"])
             if is_execution_success(execution):
                 workspace = resolve_workspace(workspace_record["workspace_id"])
@@ -588,18 +592,17 @@ while True:
 状态归一化：
 
 ```python
-TODO_STATUS_NAMES = {"Todo", "To do", "TODO", "todo", "to do"}
-IN_PROGRESS_STATUS_NAMES = {"In progress", "In Progress", "IN_PROGRESS", "in_progress"}
-IN_REVIEW_STATUS_NAMES = {"In review", "In Review", "IN_REVIEW", "in_review"}
+IN_PROGRESS_STATUSES = {"in progress", "in_process", "in process", "in_progress"}
+IN_REVIEW_STATUSES = {"in review", "in_review"}
 ```
 
-实际触发只需要判断当前是否 `in_progress`，但记录前一状态可以避免 watcher 每轮重复触发。
+实际触发判断使用归一化后的状态；记录前一状态可以避免 watcher 每轮重复触发。
 
 ## PR 创建方案
 
 ### 分支策略
 
-workspace 分支建议稳定可预测，避免冲突：
+workspace 分支保持稳定可预测，避免冲突：
 
 ```text
 scrumai/<issue-simple-id-or-task-id>-<slug>
@@ -623,7 +626,7 @@ scrumai/STORY-001-add-login-validation
 
 ### PR Body
 
-PR body 建议包含：
+当前 PR body 包含：
 
 ```markdown
 ## Summary
@@ -662,7 +665,7 @@ Automated PR generated from Vibe Kanban issue.
 
 ## Repo 解析
 
-Vibe Kanban workspace 需要 `repo_id`。实现时通过 `list_repos` 解析：
+Vibe Kanban workspace 需要 `repo_id`。当前通过 `list_repos` 解析：
 
 1. 如果用户传 `--repo-id`，直接使用。
 2. 否则使用 `--repo-name` 在 `list_repos` 返回结果中匹配：
@@ -671,7 +674,7 @@ Vibe Kanban workspace 需要 `repo_id`。实现时通过 `list_repos` 解析：
    - `path` 包含匹配。
 3. 如果匹配多个 repo，报错并打印候选项，要求用户传 `--repo-id`。
 
-建议同时支持：
+也可以直接使用：
 
 ```bash
 --repo-id <uuid>
@@ -695,13 +698,13 @@ Re-run with --repo-id <uuid> to disambiguate.
 1. 先列出 repos：
 
 ```bash
-uv run python main.py list-kanban-repos
+uv run main.py list-kanban-repos
 ```
 
 2. 如果两个 repo 都有效，使用 `--repo-id` 精确启动。
 
 ```bash
-uv run python main.py auto-workspace \
+uv run main.py auto-workspace \
   --project-name "NeckPacMan" \
   --repo-id 98afbd2b-9246-4121-8a50-1d7eff091367 \
   --base-branch main
@@ -710,15 +713,15 @@ uv run python main.py auto-workspace \
 3. 如果其中一个是误创建的重复记录，删除无效 repo registration：
 
 ```bash
-uv run python main.py delete-kanban-repo \
+uv run main.py delete-kanban-repo \
   --repo-id f3ccb0dd-08d6-496d-b216-336aa45c4a3a \
   --yes
 ```
 
-删除前建议确认该 repo 没有关联仍需要保留的 workspace；如不确定，先运行：
+删除前先确认该 repo 没有关联仍需要保留的 workspace；如不确定，先运行：
 
 ```bash
-uv run python main.py list-kanban-workspaces --name-search NeckPacMan
+uv run main.py list-kanban-workspaces --name-search NeckPacMan
 ```
 
 ## 与现有 watcher 的关系
@@ -729,26 +732,20 @@ uv run python main.py list-kanban-workspaces --name-search NeckPacMan
 Backlog -> To do
 ```
 
-新 `auto-workspace` 负责执行启动：
+`auto-workspace` 负责执行启动：
 
 ```text
-To do -> In progress -> create workspace + start Codex session -> create GitHub PR -> In review
+To do -> In progress/In process -> create workspace + start Codex session -> create GitHub PR -> In review
 ```
 
 两者可以同时运行：
 
 ```bash
-uv run python main.py watch-kanban --interval 5
-uv run python main.py auto-workspace --project-name "ScrumAI Project" --repo-name "ScrumAI"
+uv run main.py watch-kanban --interval 5
+uv run main.py auto-workspace --project-name "ScrumAI Project" --repo-name "ScrumAI"
 ```
 
-也可以后续新增组合命令：
-
-```bash
-uv run python main.py deploy --auto-workspace --repo-name "ScrumAI"
-```
-
-但 MVP 不建议把它塞进 `deploy` 默认流程，因为自动执行代码和自动创建 PR 都是有副作用动作，应显式开启。
+当前没有把 `auto-workspace` 塞进 `deploy`。自动执行代码和自动创建 PR 都是有副作用动作，应显式运行 `auto-workspace`。
 
 ## 失败处理
 
@@ -825,7 +822,7 @@ model = "gpt-5.4"
 3. 清理失败 workspace 和 mapping，避免 watcher 因旧记录跳过重试：
 
 ```bash
-uv run python main.py delete-kanban-workspace \
+uv run main.py delete-kanban-workspace \
   --workspace-id <failed-workspace-id> \
   --delete-remote \
   --delete-branches \
@@ -862,7 +859,7 @@ model: gpt-5.4
 }
 ```
 
-后续可以增加策略：自动移动到 `Blocked` 或 `Failed`，但 MVP 先保持 `In progress`，让人工判断。
+后续可以增加策略：自动移动到 `Blocked` 或 `Failed`；当前实现保持在进行中状态，让人工判断。
 
 ### 没有代码变更
 
@@ -925,38 +922,25 @@ client.update_issue(issue_id=issue_id, status="In review")
 
 ### 用户把 ticket 拖回 Todo 再拖到 In progress
 
-如果 mapping 已存在，不创建第二个 workspace。后续如果要支持“重新执行”，应设计显式命令：
+如果 mapping 已存在，不创建第二个 workspace。当前不支持自动重建；如果确实需要重新执行，应先删除对应 workspace，并从 `kanban_workspace_mapping.json` 中删除对应 issue 记录，再重新把 ticket 拖入进行中状态。
 
-```bash
-uv run python main.py auto-workspace --recreate --issue-id <issue_id>
-```
+## 验证步骤
 
-MVP 不做自动重建。
-
-## 实施步骤
-
-1. 扩展 `McpClient`，封装 `list_repos`、`list_workspaces`、`start_workspace`、`link_workspace_issue`。
-2. 继续扩展 `McpClient`，封装 `get_execution`，复用现有 `update_issue`。
-3. 新增 GitHub PR helper，优先使用 `gh pr create`，支持后续替换成 GitHub REST API。
-4. 新增 `runners/auto_workspace.py`，实现轮询、状态转换识别、prompt 生成、execution 监控、PR 创建和 mapping。
-5. 在 `main.py` 注册 `auto-workspace` 命令。
-6. 在 `main.py` 注册 `list-kanban-projects`、`list-kanban-repos`、`list-kanban-workspaces`、`delete-kanban-workspace`、`delete-kanban-repo` 辅助命令。
-7. 用 `list-kanban-repos` 验证 repo ID；名称重复时用 `--repo-id`。
-8. 用 `--dry-run --once` 验证 project / repo / issue 识别。
-9. 手动把一个 ScrumAI ticket 拖到 `In progress`，验证是否调用 `start_workspace`。
-10. 等 agent execution 完成后，验证是否创建 GitHub PR 并移动到 `In review`。
-11. 验证重复拖动不会创建第二个 workspace，重复轮询不会创建第二个 PR。
-12. 更新 `docs/vibe_kanban_full_guide.md`，把自动执行流程作为可选高级用法加入。
+1. 用 `list-kanban-repos` 验证 repo ID；名称重复时用 `--repo-id`。
+2. 用 `--dry-run --once` 验证 project / repo / issue 识别。
+3. 手动把一个 ScrumAI ticket 拖到 `In progress` / `In process`，验证是否调用 `start_workspace`。
+4. 等 agent execution 完成后，验证是否创建 GitHub PR 并移动到 `In review`。
+5. 验证重复拖动不会创建第二个 workspace，重复轮询不会创建第二个 PR。
 
 ## 验收标准
 
-- 当 ScrumAI ticket 从 `To do` 移动到 `In progress` 时，自动创建一个 linked workspace。
+- 当 ScrumAI ticket 从 `To do` 移动到 `In progress` / `In process` 时，自动创建一个 linked workspace。
 - workspace executor 默认是 `CODEX`。
 - workspace repository branch 默认是 `main`，对应 `origin/main`。
 - 首个 session 使用 issue title + description 作为上下文启动。
-- 同一个 issue 多次进入 `In progress` 不会重复创建 workspace。
+- 同一个 issue 多次进入进行中状态不会重复创建 workspace。
 - 当 agent execution 成功完成且存在代码变更时，自动创建 GitHub PR。
-- PR 创建成功后，ticket 自动从 `In progress` 移动到 `In review`。
+- PR 创建成功后，ticket 自动从进行中状态移动到 `In review`。
 - 同一个 issue 不会重复创建 PR。
 - execution 失败、无代码变更、GitHub 认证失败时，不移动到 `In review`。
 - 可以列出 Vibe Kanban project/repo/workspace IDs，解决名称重复导致的歧义。
@@ -967,9 +951,9 @@ MVP 不做自动重建。
 ## 风险与取舍
 
 - Vibe Kanban MCP 当前是轮询式集成，不是事件 webhook，因此会有最多 `interval` 秒延迟。
-- `origin/main` 在 MCP 参数中体现为 branch `main`；是否 fetch 最新 origin 由 Vibe Kanban / repo 状态决定。若需要强一致，可以在后续增加 git preflight。
-- 自动创建 workspace 会启动真实 coding agent，自动创建 PR 会影响 GitHub repo，因此建议默认只在用户明确运行 `auto-workspace` 后启用。
-- PR 创建依赖 workspace 分支、GitHub remote、GitHub 认证和 push 权限。MVP 使用 `gh` CLI 可最快落地，但 CI / server 场景应改为 GitHub REST API + `GITHUB_TOKEN`。
+- `origin/main` 在 MCP 参数中体现为 branch `main`；是否 fetch 最新 origin 由 Vibe Kanban / repo 状态决定。若需要强一致，可以增加 git preflight。
+- 自动创建 workspace 会启动真实 coding agent，自动创建 PR 会影响 GitHub repo，因此只在用户明确运行 `auto-workspace` 后启用。
+- PR 创建依赖 workspace 分支、GitHub remote、GitHub 认证和 push 权限。当前使用 `gh` CLI；CI / server 场景可改为 GitHub REST API + `GITHUB_TOKEN`。
 - `delete-kanban-repo` 使用 Vibe Kanban 本地 backend API，而不是 MCP tool；如果 Vibe Kanban 改端口或 API 路径，需要通过 `--backend-url` 调整或升级适配。
 - 是否把成功 execution 直接视为“开发完毕”存在质量风险。更严格的版本可以要求 agent 输出检查结果、测试通过，或增加 reviewer agent gate 后再创建 PR。
 - 如果 Vibe Kanban 后续提供状态变更事件或 webhook，应把轮询 watcher 替换为事件驱动，但核心幂等和 mapping 设计不变。

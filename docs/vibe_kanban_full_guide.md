@@ -30,12 +30,12 @@ npx vibe-kanban
 ### 步骤 1: 输入产品目标
 
 ```bash
-uv run python main.py decompose -t "你的项目目标描述"
+uv run main.py decompose -t "你的项目目标描述"
 ```
 
 例如：
 ```bash
-uv run python main.py decompose -t "Build a REST API for managing items with CRUD operations using FastAPI and SQLite"
+uv run main.py decompose -t "Build a REST API for managing items with CRUD operations using FastAPI and SQLite"
 ```
 
 这会生成 `decomposed_task.json` 文件。
@@ -43,7 +43,7 @@ uv run python main.py decompose -t "Build a REST API for managing items with CRU
 ### 步骤 2: 分派任务给 AI 或人类
 
 ```bash
-uv run python main.py dispatch
+uv run main.py dispatch
 ```
 
 这会分析任务并决定哪些由 AI 执行，哪些由人类执行。
@@ -51,7 +51,7 @@ uv run python main.py dispatch
 ### 步骤 3: 评估分派结果
 
 ```bash
-uv run python main.py evaluate-dispatch
+uv run main.py evaluate-dispatch
 ```
 
 这会生成 `dispatch_evaluation.json` 文件，用于评估分派准确性。
@@ -61,7 +61,7 @@ uv run python main.py evaluate-dispatch
 使用 `deploy` 命令，一步完成"导出任务到看板"和"启动依赖监控"两个阶段：
 
 ```bash
-uv run python main.py deploy --project-name "你的项目名"
+uv run main.py deploy --project-name "你的项目名"
 ```
 
 **执行流程**：
@@ -84,16 +84,16 @@ uv run python main.py deploy --project-name "你的项目名"
 
 ```bash
 # 导出并持续监控（默认）
-uv run python main.py deploy --project-name "NeckPacMan"
+uv run main.py deploy --project-name "NeckPacMan"
 
 # 只导出，不启动 Watcher
-uv run python main.py deploy --project-name "NeckPacMan" --no-watch
+uv run main.py deploy --project-name "NeckPacMan" --no-watch
 
 # 导出后只扫描一次依赖关系
-uv run python main.py deploy --project-name "NeckPacMan" --once
+uv run main.py deploy --project-name "NeckPacMan" --once
 
 # 自定义轮询间隔（每 10 秒）
-uv run python main.py deploy --project-name "NeckPacMan" --interval 10
+uv run main.py deploy --project-name "NeckPacMan" --interval 10
 ```
 
 ### 步骤 4（替代方案）: 分步执行导出和监控
@@ -102,10 +102,10 @@ uv run python main.py deploy --project-name "NeckPacMan" --interval 10
 
 ```bash
 # 仅导出任务（写入 kanban_mapping.json）
-uv run python main.py export-kanban --project-name "你的项目名"
+uv run main.py export-kanban --project-name "你的项目名"
 
 # 单独启动 Watcher（依赖 kanban_mapping.json 已存在）
-uv run python main.py watch-kanban
+uv run main.py watch-kanban
 ```
 
 **`watch-kanban` 参数说明**：
@@ -164,14 +164,14 @@ uv run python main.py watch-kanban
 
 ```bash
 # 完整工作流（推荐）
-uv run python main.py decompose -t "你的项目目标"
-uv run python main.py dispatch
-uv run python main.py evaluate-dispatch
-uv run python main.py deploy --project-name "你的项目名"
+uv run main.py decompose -t "你的项目目标"
+uv run main.py dispatch
+uv run main.py evaluate-dispatch
+uv run main.py deploy --project-name "你的项目名"
 
 # 分步执行
-uv run python main.py export-kanban --project-name "你的项目名"
-uv run python main.py watch-kanban --interval 10
+uv run main.py export-kanban --project-name "你的项目名"
+uv run main.py watch-kanban --interval 10
 ```
 
 ## 文件说明

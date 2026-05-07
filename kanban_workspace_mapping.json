@@ -21,6 +21,49 @@
       "issue_linked": false,
       "issue_link_error": "VK API returned error status: 409 Conflict",
       "issue_link_failed_at": "2026-05-04T10:10:10.197257+00:00"
+    },
+    "8af125ca-dbc2-4b48-b561-1c917b35692c": {
+      "state": "created",
+      "issue_id": "8af125ca-dbc2-4b48-b561-1c917b35692c",
+      "issue_simple_id": "LEO-76",
+      "issue_title": "Update Readme",
+      "repo_id": "f3ccb0dd-08d6-496d-b216-336aa45c4a3a",
+      "base_branch": "main",
+      "executor": "CODEX",
+      "executor_model_id": "gpt-5.4",
+      "started_at": "2026-05-07T11:56:16.023948+00:00",
+      "workspace_id": "83268fc6-5713-43af-87a0-09236dcaa038",
+      "session_id": "021f9c7f-31c8-40bc-a9ed-e660a669c771",
+      "execution_id": null,
+      "workspace_branch": null,
+      "created_at": "2026-05-07T11:56:19.761333+00:00",
+      "start_workspace_response": {
+        "workspace_id": "83268fc6-5713-43af-87a0-09236dcaa038"
+      },
+      "issue_linked": false,
+      "issue_link_error": "VK API returned error status: 409 Conflict",
+      "issue_link_failed_at": "2026-05-07T11:56:20.291171+00:00"
+    },
+    "36eed207-b695-44a6-acc1-4189926eea18": {
+      "state": "created",
+      "issue_id": "36eed207-b695-44a6-acc1-4189926eea18",
+      "issue_simple_id": "LEO-78",
+      "issue_title": "update readme document",
+      "repo_id": "f3ccb0dd-08d6-496d-b216-336aa45c4a3a",
+      "base_branch": "main",
+      "executor": "CODEX",
+      "executor_model_id": "gpt-5.4",
+      "started_at": "2026-05-07T12:33:41.551277+00:00",
+      "workspace_id": "9532c5f3-e703-4aef-a3a7-651bb3417640",
+      "session_id": "e49f54aa-cdd7-4e07-8814-678931d1f9da",
+      "execution_id": null,
+      "workspace_branch": null,
+      "created_at": "2026-05-07T12:33:44.741042+00:00",
+      "start_workspace_response": {
+        "workspace_id": "9532c5f3-e703-4aef-a3a7-651bb3417640"
+      },
+      "issue_linked": true,
+      "issue_linked_at": "2026-05-07T12:33:45.266172+00:00"
     }
   },
   "project_id": "5752a0ea-05ff-49e6-b080-fabaf5b67423",
@@ -32,10 +75,10 @@
   "executor": "CODEX",
   "base_branch": "main",
   "github": {
-    "owner": "LeoLee-Xiaohu",
+    "owner": "Leolee-Xiaohu",
     "repo": "NeckPacMan",
     "base": "main",
-    "full_name": "LeoLee-Xiaohu/NeckPacMan"
+    "full_name": "Leolee-Xiaohu/NeckPacMan"
   },
   "executor_model_id": "gpt-5.4"
 }

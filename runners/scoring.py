@@ -5,8 +5,8 @@ Mirrors the scoring system in scrumai-forge:
 - src/resolvers/config.ts (LLM config)
 
 Usage:
-    python main.py score -f ticket.md
-    python main.py score -t "Build a login page with email/password auth"
+    uv run main.py score -f ticket.md
+    uv run main.py score -t "Build a login page with email/password auth"
 """
 
 import json

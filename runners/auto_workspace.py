@@ -22,10 +22,10 @@ from mcp_adapter import (
 )
 
 
-IN_PROGRESS_STATUSES = {"in progress", "in_progress"}
+IN_PROGRESS_STATUSES = {"in progress", "in_progress", "in process", "in_process"}
 IN_REVIEW_STATUSES = {"in review", "in_review"}
-FAILED_EXECUTION_STATUSES = {"failed", "killed", "cancelled", "canceled", "timeout", "timed_out"}
-COMPLETED_EXECUTION_STATUSES = {"completed", "complete", "succeeded", "success"}
+FAILED_EXECUTION_STATUSES = {"failed", "error", "killed", "cancelled", "canceled", "timeout", "timed_out"}
+COMPLETED_EXECUTION_STATUSES = {"completed", "complete", "finished", "succeeded", "success"}
 
 
 def run_auto_workspace(args) -> bool:
@@ -179,14 +179,15 @@ def run_auto_workspace(args) -> bool:
 
                 previous_status_by_issue_id[issue.id] = current_status
 
-            _retry_review_status_for_existing_prs(
-                client=client,
-                issue_by_id=issue_by_id,
-                mapping=mapping,
-                mapping_path=mapping_path,
-                review_status=review_status,
-                dry_run=dry_run,
-            )
+            if not skip_pr:
+                _retry_review_status_for_existing_prs(
+                    client=client,
+                    issue_by_id=issue_by_id,
+                    mapping=mapping,
+                    mapping_path=mapping_path,
+                    review_status=review_status,
+                    dry_run=dry_run,
+                )
 
             if run_once:
                 break
@@ -346,7 +347,8 @@ def _parse_github_repo(remote_url: str) -> str | None:
 
 
 def _normalize_status(status: str | None) -> str:
-    return (status or "").strip().lower().replace("-", " ").replace("_", " ")
+    normalized = (status or "").strip().lower().replace("-", " ").replace("_", " ")
+    return re.sub(r"\s+", " ", normalized)
 
 
 def _is_supported_issue(client: McpClient, issue: McpIssue, include_manual_issues: bool) -> bool:
@@ -438,12 +440,14 @@ def _start_issue_workspace(
         else {}
     )
     workspace_id = _first_value(result, "workspace_id") or workspace.get("id")
-    execution_id = _first_value(result, "execution_id") or execution.get("id")
+    execution_id = _extract_execution_id(result) or execution.get("id")
     branch = workspace.get("branch") or _first_value(result, "workspace_branch")
 
     session_id = _first_value(result, "session_id")
     if workspace_id and not session_id:
         session_id = _latest_session_id(client, workspace_id)
+    if workspace_id and not execution_id:
+        execution_id = _latest_session_execution_id(client, workspace_id, session_id)
 
     records[issue.id].update({
         "state": "created",
@@ -490,6 +494,8 @@ def _ensure_workspace_issue_link(
         linked = client.link_workspace_issue(str(workspace_id), issue.id)
     except Exception as e:
         link_error = str(e)
+        if _is_already_linked_error(link_error):
+            linked = True
     else:
         link_error = ""
     if linked:
@@ -504,6 +510,11 @@ def _ensure_workspace_issue_link(
     _save_mapping(mapping_path, mapping)
     print(f"[warn] workspace {workspace_id} was created but could not be linked to {issue.title}")
     return False
+
+
+def _is_already_linked_error(error: str) -> bool:
+    normalized = error.lower()
+    return "409" in normalized or "conflict" in normalized or "already" in normalized
 
 
 def _build_workspace_prompt(issue: McpIssue, details: dict[str, Any]) -> str:
@@ -536,6 +547,25 @@ def _latest_session_id(client: McpClient, workspace_id: str) -> str | None:
     return str(sessions[-1].get("id") or "") or None
 
 
+def _latest_session_execution_id(
+    client: McpClient,
+    workspace_id: str,
+    session_id: str | None = None,
+) -> str | None:
+    try:
+        sessions = client.list_sessions(workspace_id)
+    except Exception:
+        return None
+    candidates = sessions
+    if session_id:
+        candidates = [session for session in sessions if str(session.get("id") or "") == str(session_id)]
+    for session in reversed(candidates):
+        execution_id = _extract_execution_id(session)
+        if execution_id:
+            return execution_id
+    return None
+
+
 def _maybe_create_pr_and_review(
     client: McpClient,
     issue: McpIssue,
@@ -552,8 +582,22 @@ def _maybe_create_pr_and_review(
 ) -> None:
     if current_status not in IN_PROGRESS_STATUSES:
         return
-    if not record or not record.get("execution_id"):
+    if not record:
         return
+    if not record.get("execution_id"):
+        workspace_id = record.get("workspace_id")
+        if not workspace_id:
+            return
+        recovered_execution_id = _latest_session_execution_id(
+            client,
+            str(workspace_id),
+            str(record.get("session_id") or "") or None,
+        )
+        if not recovered_execution_id:
+            return
+        record["execution_id"] = recovered_execution_id
+        record["execution_id_recovered_at"] = _utc_now()
+        _save_mapping(mapping_path, mapping)
     if record.get("pull_request", {}).get("url"):
         return
     if record.get("pr_state") in {"no_changes", "failed"}:
@@ -870,12 +914,51 @@ def _is_execution_failed(execution: dict[str, Any]) -> bool:
     return exit_code not in (None, 0)
 
 
-def _first_value(data: dict[str, Any], key: str) -> Any:
-    if key in data:
-        return data[key]
-    for value in data.values():
-        if isinstance(value, dict) and key in value:
-            return value[key]
+def _first_value(data: Any, key: str) -> Any:
+    if isinstance(data, dict):
+        if key in data:
+            return data[key]
+        for value in data.values():
+            found = _first_value(value, key)
+            if found is not None:
+                return found
+    if isinstance(data, list):
+        for value in data:
+            found = _first_value(value, key)
+            if found is not None:
+                return found
+    return None
+
+
+def _extract_execution_id(data: Any) -> str | None:
+    for key in (
+        "execution_id",
+        "execution_process_id",
+        "active_execution_id",
+        "current_execution_id",
+        "process_id",
+    ):
+        value = _first_value(data, key)
+        if value:
+            return str(value)
+    return _first_named_child_id(data, ("execution", "process"))
+
+
+def _first_named_child_id(data: Any, names: tuple[str, ...]) -> str | None:
+    if isinstance(data, dict):
+        for key, value in data.items():
+            if any(name in key.lower() for name in names) and isinstance(value, dict):
+                child_id = value.get("id")
+                if child_id:
+                    return str(child_id)
+            found = _first_named_child_id(value, names)
+            if found:
+                return found
+    if isinstance(data, list):
+        for value in data:
+            found = _first_named_child_id(value, names)
+            if found:
+                return found
     return None
 
 
@@ -897,4 +980,4 @@ def _utc_now() -> str:
 
 
 if __name__ == "__main__":
-    print("Use `uv run python main.py auto-workspace ...`.", file=sys.stderr)
+    print("Use `uv run main.py auto-workspace ...`.", file=sys.stderr)
