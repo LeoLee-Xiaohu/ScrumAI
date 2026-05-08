@@ -142,6 +142,7 @@ def run_auto_workspace(args) -> bool:
                         executor_model_id=executor_model_id,
                         base_branch=base_branch,
                         sync_base_branch=sync_base_branch,
+                        backend_url=backend_url,
                         mapping=mapping,
                         mapping_path=mapping_path,
                         dry_run=dry_run,
@@ -381,6 +382,7 @@ def _start_issue_workspace(
     executor_model_id: str | None,
     base_branch: str,
     sync_base_branch: bool,
+    backend_url: str | None,
     mapping: dict[str, Any],
     mapping_path: Path,
     dry_run: bool,
@@ -417,9 +419,11 @@ def _start_issue_workspace(
         return True
 
     base_ready, base_message = _ensure_workspace_base_branch_current(
+        client=client,
         repo=repo,
         base_branch=base_branch,
         sync=sync_base_branch,
+        backend_url=backend_url,
     )
     if not base_ready:
         records[issue.id].update({
@@ -963,11 +967,22 @@ def create_pull_request(
 
 
 def _ensure_workspace_base_branch_current(
+    client: McpClient,
     repo: dict[str, Any],
     base_branch: str,
     sync: bool,
+    backend_url: str | None,
 ) -> tuple[bool, str]:
     repo_path = str(repo.get("path") or "").strip()
+    if not repo_path:
+        repo_id = str(repo.get("id") or "").strip()
+        if repo_id:
+            success, backend_repo, _ = client.get_repo_http(repo_id=repo_id, backend_url=backend_url)
+            if success and isinstance(backend_repo, dict):
+                backend_path = str(backend_repo.get("path") or "").strip()
+                if backend_path:
+                    repo["path"] = backend_path
+                    repo_path = backend_path
     repo_name = str(repo.get("name") or repo.get("id") or "<unknown repo>")
     if not repo_path:
         return False, (

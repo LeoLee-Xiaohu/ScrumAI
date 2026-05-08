@@ -242,6 +242,69 @@
       "pr_created_at": "2026-05-08T05:38:57.169188+00:00",
       "issue_status_after_pr": "In review",
       "issue_status_updated_at": "2026-05-08T05:38:59.974585+00:00"
+    },
+    "bcc10e25-ae2e-4a75-b0fb-481c1d2a8dbb": {
+      "state": "failed",
+      "issue_id": "bcc10e25-ae2e-4a75-b0fb-481c1d2a8dbb",
+      "issue_simple_id": "LEO-84",
+      "issue_title": "[STORY-003] Build Webcam Preview & HUD Status",
+      "repo_id": "1f3f87d3-7f1a-4932-a806-01dc08b960d8",
+      "base_branch": "main",
+      "executor": "CODEX",
+      "executor_model_id": "gpt-5.4",
+      "started_at": "2026-05-08T06:15:32.820032+00:00",
+      "error": "Repo 'NeckFlappy' does not have a local path in Vibe Kanban, so ScrumAI cannot verify that 'main' matches origin/main before creating the workspace.",
+      "failed_at": "2026-05-08T06:15:34.940960+00:00"
+    },
+    "f32f3610-2bb3-4f70-8420-ed02b71b4945": {
+      "state": "created",
+      "issue_id": "f32f3610-2bb3-4f70-8420-ed02b71b4945",
+      "issue_simple_id": "LEO-82",
+      "issue_title": "[STORY-002] Pipe Generation & Collision Logic",
+      "repo_id": "1f3f87d3-7f1a-4932-a806-01dc08b960d8",
+      "base_branch": "main",
+      "executor": "CODEX",
+      "executor_model_id": "gpt-5.4",
+      "started_at": "2026-05-08T06:20:53.011238+00:00",
+      "workspace_id": "874088e0-33a4-4d29-bbc8-d0b8bd6ef242",
+      "session_id": "89c6c2f6-8284-4c16-ac11-1bd37501076f",
+      "execution_id": null,
+      "workspace_branch": "vk/8740-story-002-pipe-g",
+      "created_at": "2026-05-08T06:21:01.060767+00:00",
+      "start_workspace_response": {
+        "workspace_id": "874088e0-33a4-4d29-bbc8-d0b8bd6ef242"
+      },
+      "workspace_archived": false,
+      "workspace_container_ref": "/var/folders/cd/s_cldwzx03jdbr46xjs0_tkc0000gn/T/vibe-kanban/worktrees/8740-story-002-pipe-g",
+      "repo_path": "/var/folders/cd/s_cldwzx03jdbr46xjs0_tkc0000gn/T/vibe-kanban/worktrees/8740-story-002-pipe-g/NeckFlappy",
+      "working_dir": "/var/folders/cd/s_cldwzx03jdbr46xjs0_tkc0000gn/T/vibe-kanban/worktrees/8740-story-002-pipe-g/NeckFlappy",
+      "source_repo_path": "/Users/leo/AI-Projects/NeckFlappy/",
+      "target_branch": "main",
+      "latest_process_status": "completed",
+      "agent_working_dir": "NeckFlappy",
+      "issue_linked": true,
+      "issue_linked_at": "2026-05-08T06:21:19.229130+00:00",
+      "latest_process_completed_at": "2026-05-08T06:24:25.930313Z",
+      "execution": {
+        "state": "completed",
+        "raw": {
+          "status": "completed",
+          "completed_at": "2026-05-08T06:24:25.930313Z"
+        },
+        "updated_at": "2026-05-08T06:24:31.685983+00:00"
+      },
+      "pull_request": {
+        "url": "https://github.com/LeoLee-Xiaohu/NeckFlappy/pull/6",
+        "number": 6,
+        "head": "vk/8740-story-002-pipe-g",
+        "base": "main",
+        "github_repo": "Leolee-Xiaohu/NeckFlappy",
+        "created_at": "2026-05-08T06:24:36.656299+00:00"
+      },
+      "pr_state": "created",
+      "pr_created_at": "2026-05-08T06:24:36.656399+00:00",
+      "issue_status_after_pr": "In review",
+      "issue_status_updated_at": "2026-05-08T06:24:39.505111+00:00"
     }
   },
   "project_id": "a88358ae-e0ae-4ae8-ab9b-227167fb4a9a",

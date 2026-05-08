@@ -653,6 +653,21 @@ class McpClient:
             backend_url=backend_url,
         )
 
+    def get_repo_http(
+        self,
+        repo_id: str,
+        backend_url: str = None,
+    ) -> tuple[bool, dict | None, str]:
+        """Fetch a Vibe Kanban repository via the local backend API."""
+        success, data, message = self._backend_request(
+            path=f"/api/repos/{repo_id}",
+            method="GET",
+            backend_url=backend_url,
+        )
+        if not isinstance(data, dict):
+            return success, None, message
+        return success, data, message
+
     def get_project_repo_defaults(
         self,
         project_id: str,

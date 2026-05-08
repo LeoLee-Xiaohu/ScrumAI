@@ -95,6 +95,10 @@ def test_extract_execution_id_from_common_nested_shapes():
 def test_workspace_base_branch_check_passes_when_local_matches_remote(tmp_path, monkeypatch):
     import runners.auto_workspace as auto_workspace
 
+    class FakeClient:
+        def get_repo_http(self, repo_id, backend_url=None):
+            raise AssertionError("backend lookup should not be needed when repo.path is already present")
+
     def fake_run_git(args, cwd, check):
         command = tuple(args)
         if command == ("rev-parse", "--show-toplevel"):
@@ -110,9 +114,11 @@ def test_workspace_base_branch_check_passes_when_local_matches_remote(tmp_path, 
     monkeypatch.setattr(auto_workspace, "_run_git", fake_run_git)
 
     ok, message = _ensure_workspace_base_branch_current(
+        client=FakeClient(),
         repo={"name": "NeckFlappy", "path": str(tmp_path)},
         base_branch="main",
         sync=False,
+        backend_url=None,
     )
 
     assert ok is True
@@ -121,6 +127,10 @@ def test_workspace_base_branch_check_passes_when_local_matches_remote(tmp_path, 
 
 def test_workspace_base_branch_check_blocks_when_local_is_behind(tmp_path, monkeypatch):
     import runners.auto_workspace as auto_workspace
+
+    class FakeClient:
+        def get_repo_http(self, repo_id, backend_url=None):
+            raise AssertionError("backend lookup should not be needed when repo.path is already present")
 
     def fake_run_git(args, cwd, check):
         command = tuple(args)
@@ -141,9 +151,11 @@ def test_workspace_base_branch_check_blocks_when_local_is_behind(tmp_path, monke
     monkeypatch.setattr(auto_workspace, "_run_git", fake_run_git)
 
     ok, message = _ensure_workspace_base_branch_current(
+        client=FakeClient(),
         repo={"name": "NeckFlappy", "path": str(tmp_path)},
         base_branch="main",
         sync=False,
+        backend_url=None,
     )
 
     assert ok is False
@@ -154,6 +166,10 @@ def test_workspace_base_branch_check_fast_forwards_when_requested(tmp_path, monk
     import runners.auto_workspace as auto_workspace
 
     seen_commands = []
+
+    class FakeClient:
+        def get_repo_http(self, repo_id, backend_url=None):
+            raise AssertionError("backend lookup should not be needed when repo.path is already present")
 
     def fake_run_git(args, cwd, check):
         seen_commands.append(tuple(args))
@@ -179,9 +195,11 @@ def test_workspace_base_branch_check_fast_forwards_when_requested(tmp_path, monk
     monkeypatch.setattr(auto_workspace, "_run_git", fake_run_git)
 
     ok, message = _ensure_workspace_base_branch_current(
+        client=FakeClient(),
         repo={"name": "NeckFlappy", "path": str(tmp_path)},
         base_branch="main",
         sync=True,
+        backend_url=None,
     )
 
     assert ok is True
@@ -192,6 +210,10 @@ def test_workspace_base_branch_check_fast_forwards_when_requested(tmp_path, monk
 
 def test_workspace_base_branch_check_blocks_when_local_is_ahead(tmp_path, monkeypatch):
     import runners.auto_workspace as auto_workspace
+
+    class FakeClient:
+        def get_repo_http(self, repo_id, backend_url=None):
+            raise AssertionError("backend lookup should not be needed when repo.path is already present")
 
     def fake_run_git(args, cwd, check):
         command = tuple(args)
@@ -212,13 +234,52 @@ def test_workspace_base_branch_check_blocks_when_local_is_ahead(tmp_path, monkey
     monkeypatch.setattr(auto_workspace, "_run_git", fake_run_git)
 
     ok, message = _ensure_workspace_base_branch_current(
+        client=FakeClient(),
         repo={"name": "NeckFlappy", "path": str(tmp_path)},
         base_branch="main",
         sync=True,
+        backend_url=None,
     )
 
     assert ok is False
     assert "ahead of origin/main" in message
+
+
+def test_workspace_base_branch_check_uses_backend_repo_path_when_mcp_repo_path_is_missing(tmp_path, monkeypatch):
+    import runners.auto_workspace as auto_workspace
+
+    class FakeClient:
+        def get_repo_http(self, repo_id, backend_url=None):
+            assert repo_id == "repo-1"
+            return True, {"id": repo_id, "path": str(tmp_path)}, ""
+
+    def fake_run_git(args, cwd, check):
+        command = tuple(args)
+        assert cwd == str(tmp_path)
+        if command == ("rev-parse", "--show-toplevel"):
+            return _completed(args, str(tmp_path))
+        if command == ("fetch", "origin", "main"):
+            return _completed(args, "")
+        if command == ("rev-parse", "refs/heads/main"):
+            return _completed(args, "abc123")
+        if command == ("rev-parse", "refs/remotes/origin/main"):
+            return _completed(args, "abc123")
+        raise AssertionError(f"Unexpected git command: {args}")
+
+    monkeypatch.setattr(auto_workspace, "_run_git", fake_run_git)
+
+    repo = {"id": "repo-1", "name": "NeckFlappy", "path": None}
+    ok, message = _ensure_workspace_base_branch_current(
+        client=FakeClient(),
+        repo=repo,
+        base_branch="main",
+        sync=True,
+        backend_url="http://127.0.0.1:61052",
+    )
+
+    assert ok is True
+    assert message == ""
+    assert repo["path"] == str(tmp_path)
 
 
 def test_conflict_when_linking_workspace_is_treated_as_already_linked(tmp_path):
