@@ -30,6 +30,39 @@
 
 GitHub PR 创建不在当前 Vibe Kanban MCP 工具列表中，建议通过 GitHub CLI `gh pr create` 或 GitHub REST API 实现。MVP 优先使用 `gh`，因为它能复用本机 GitHub 登录态，落地成本最低。
 
+当前实现对 `gh` 又加了一层保护：调用 `gh auth status` 和 `gh pr create` 时，会主动移除进程环境里的 `GH_TOKEN` / `GITHUB_TOKEN`，优先使用 `gh auth login` 存在本机 keyring / config 中的登录态。原因是 watcher 常常是长时间运行进程；如果它启动时继承了一个过期或权限不足的 token，GitHub CLI 会优先使用该 token，导致“用户手动 `gh pr create` 成功，但 watcher 自动创建 PR 失败”。
+
+这点需要明确给开发人员：
+
+- `auto-workspace` 的 PR 创建能力不是由 Vibe Kanban MCP 提供的。
+- workspace 创建、issue 关联、状态回写依赖 Vibe Kanban MCP / backend。
+- `git push` 和 `gh pr create` 依赖本机 `git` / `gh` 环境，以及当前机器上的 GitHub 认证状态。
+
+因此，在一台新的开发机或新的 shell 环境启动 `auto-workspace` 之前，除了确认 Vibe Kanban backend 可用，还必须确认本机 `gh` 已登录，并且对目标仓库有创建 PR 和 push 分支的权限。
+
+### 新环境前置检查
+
+第一次在新环境启用 `auto-workspace` 前，至少检查以下内容：
+
+```bash
+git remote -v
+gh auth status
+gh repo view owner/repo --json name,viewerPermission,isPrivate
+```
+
+建议再做一次最小化的手动 PR 权限验证：
+
+```bash
+gh pr create \
+  --repo owner/repo \
+  --base main \
+  --head <existing-branch> \
+  --title "test pr permission" \
+  --body "test"
+```
+
+如果这些检查不通过，`auto-workspace` 即使能成功创建 workspace，也无法完成第 7/8 步。
+
 ## 用户流程
 
 1. 用户运行现有导入流程：
@@ -310,6 +343,12 @@ uv run main.py auto-workspace \
 
 默认同时处理 ScrumAI 导入 ticket 和手动创建 ticket。手动 ticket 没有 `**Task ID:**` 等 export markers 也会被支持；如果某个场景只想处理 ScrumAI 导入 ticket，可显式加 `--scrumai-only`。
 
+启动前提也要明确：
+
+- Vibe Kanban MCP / backend 可用，负责 workspace 生命周期。
+- 本机 `git` / `gh` 可用，负责 `push` 和 `create PR`。
+- 目标 repo 的 GitHub 认证和权限已经在当前机器上配置完成。
+
 ### 辅助 CLI
 
 为了避免 project / repo 名称重复导致无法精确选择，新增以下辅助命令。
@@ -528,6 +567,11 @@ gh pr create \
 ```
 
 4. 解析 `gh pr create` 输出的 URL，写入 mapping。
+
+注意：
+
+- 当前实现会在 `gh` 子进程环境里移除 `GH_TOKEN` / `GITHUB_TOKEN`，避免长跑 watcher 继承到陈旧 token 后覆盖本机 `gh auth login` 登录态。
+- 如果 `gh pr create` 返回 `GraphQL: Resource not accessible by personal access token (createPullRequest)`，优先怀疑 watcher 启动时继承了错误 token，或该进程没有使用与你交互式 shell 相同的 `gh` 登录态。
 
 如果不希望依赖 `gh`，可用 GitHub REST API：
 
@@ -977,6 +1021,33 @@ mapping 已有 PR URL 时，下轮 watcher 不再创建 PR，只重试：
 ```python
 client.update_issue(issue_id=issue_id, status="In review")
 ```
+
+### 手动 `gh pr create` 成功，但 watcher 仍报 `createPullRequest` 权限错误
+
+这是一个已经出现过的真实故障，根因通常不是仓库权限本身，而是 watcher 进程的认证上下文不同于你当前 shell：
+
+1. 你在当前 shell 里重新执行了 `gh auth login`，因此手动 `gh pr create` 可以成功。
+2. 但 watcher 是较早启动的长跑 Python 进程，可能继承了旧的 `GH_TOKEN` / `GITHUB_TOKEN`。
+3. GitHub CLI 对显式 token 环境变量的优先级高于本地 keyring / `gh auth login` 登录态。
+4. 结果就是：手动创建 PR 成功，watcher 自动创建 PR 仍报 `GraphQL: Resource not accessible by personal access token (createPullRequest)`。
+
+当前实现已修正：
+
+1. watcher 调用 `gh auth status` / `gh pr create` 时，会移除 `GH_TOKEN` / `GITHUB_TOKEN`，优先使用 `gh` 本地登录态。
+2. 如果仍遇到该 GraphQL 错误，日志会追加 `gh auth status` 摘要，便于判断该进程实际看到的认证状态。
+
+排查步骤：
+
+```bash
+gh auth status
+gh pr create --repo owner/repo --base main --head <branch> --title "test" --body "test"
+```
+
+如果手动命令成功，而 watcher 仍失败：
+
+1. 停掉旧 watcher。
+2. 重新启动 `uv run main.py auto-workspace ...`，让新进程继承最新认证状态。
+3. 不要在启动 watcher 的 shell 中额外注入过期的 `GH_TOKEN` / `GITHUB_TOKEN`。
 
 ### In review 状态不存在
 

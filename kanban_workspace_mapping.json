@@ -192,6 +192,56 @@
       "pr_created_at": "2026-05-08T05:28:01.172680+00:00",
       "issue_status_after_pr": "In review",
       "issue_status_updated_at": "2026-05-08T05:28:03.960734+00:00"
+    },
+    "4c7cb1d7-ef05-47ab-a5e8-efc1b2372bd0": {
+      "state": "created",
+      "issue_id": "4c7cb1d7-ef05-47ab-a5e8-efc1b2372bd0",
+      "issue_simple_id": "LEO-81",
+      "issue_title": "[STORY-002] Implement Bird Physics & Rendering",
+      "repo_id": "1f3f87d3-7f1a-4932-a806-01dc08b960d8",
+      "base_branch": "main",
+      "executor": "CODEX",
+      "executor_model_id": "gpt-5.4",
+      "started_at": "2026-05-08T05:35:45.125218+00:00",
+      "workspace_id": "87597ab2-3174-4cbf-bfbc-fd389cbaa1da",
+      "session_id": "61daf24f-02ee-4188-86f3-4580e13d85cc",
+      "execution_id": null,
+      "workspace_branch": "vk/8759-story-002-implem",
+      "created_at": "2026-05-08T05:35:48.923389+00:00",
+      "start_workspace_response": {
+        "workspace_id": "87597ab2-3174-4cbf-bfbc-fd389cbaa1da"
+      },
+      "workspace_archived": false,
+      "workspace_container_ref": "/var/folders/cd/s_cldwzx03jdbr46xjs0_tkc0000gn/T/vibe-kanban/worktrees/8759-story-002-implem",
+      "repo_path": "/var/folders/cd/s_cldwzx03jdbr46xjs0_tkc0000gn/T/vibe-kanban/worktrees/8759-story-002-implem/NeckFlappy",
+      "working_dir": "/var/folders/cd/s_cldwzx03jdbr46xjs0_tkc0000gn/T/vibe-kanban/worktrees/8759-story-002-implem/NeckFlappy",
+      "source_repo_path": "/Users/leo/AI-Projects/NeckFlappy/",
+      "target_branch": "main",
+      "latest_process_status": "completed",
+      "agent_working_dir": "NeckFlappy",
+      "issue_linked": true,
+      "issue_linked_at": "2026-05-08T05:36:07.673245+00:00",
+      "latest_process_completed_at": "2026-05-08T05:38:51.093590Z",
+      "execution": {
+        "state": "completed",
+        "raw": {
+          "status": "completed",
+          "completed_at": "2026-05-08T05:38:51.093590Z"
+        },
+        "updated_at": "2026-05-08T05:38:52.057749+00:00"
+      },
+      "pull_request": {
+        "url": "https://github.com/LeoLee-Xiaohu/NeckFlappy/pull/5",
+        "number": 5,
+        "head": "vk/8759-story-002-implem",
+        "base": "main",
+        "github_repo": "Leolee-Xiaohu/NeckFlappy",
+        "created_at": "2026-05-08T05:38:57.169133+00:00"
+      },
+      "pr_state": "created",
+      "pr_created_at": "2026-05-08T05:38:57.169188+00:00",
+      "issue_status_after_pr": "In review",
+      "issue_status_updated_at": "2026-05-08T05:38:59.974585+00:00"
     }
   },
   "project_id": "a88358ae-e0ae-4ae8-ab9b-227167fb4a9a",
