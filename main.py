@@ -277,6 +277,134 @@ def cmd_delete_kanban_repo(args: argparse.Namespace) -> None:
         client.close()
 
 
+def _merge_project_repo_defaults(existing: list[dict] | None, repo_id: str, target_branch: str) -> list[dict]:
+    merged: list[dict] = []
+    seen = False
+    for entry in existing or []:
+        if not isinstance(entry, dict):
+            continue
+        current_repo_id = entry.get("repo_id")
+        if current_repo_id == repo_id:
+            merged.append({"repo_id": repo_id, "target_branch": target_branch})
+            seen = True
+            continue
+        if current_repo_id and entry.get("target_branch"):
+            merged.append(
+                {
+                    "repo_id": current_repo_id,
+                    "target_branch": entry["target_branch"],
+                }
+            )
+
+    if not seen:
+        merged.append({"repo_id": repo_id, "target_branch": target_branch})
+    return merged
+
+
+def cmd_register_kanban_repo(args: argparse.Namespace) -> None:
+    """Register a local git repo in Vibe Kanban and optionally bind it to a project."""
+    from mcp_adapter import McpClient, _resolve_project_by_name_or_id
+
+    print("Starting Vibe Kanban MCP Server...")
+    client = McpClient()
+    try:
+        backend_url = client.resolve_backend_url(args.backend_url)
+        print(f"Checking Vibe Kanban backend: {backend_url}")
+        healthy, health_message = client.check_backend_health(backend_url=backend_url)
+        if not healthy:
+            print("Vibe Kanban backend is not reachable.")
+            print(f"Backend URL: {backend_url}")
+            if health_message:
+                print(health_message)
+            print("Start Vibe Kanban so the local backend is running, then retry.")
+            print(f"Optional check: curl {backend_url}/api/health")
+            print("If Vibe Kanban uses a different port, pass --backend-url http://127.0.0.1:<port>.")
+            sys.exit(1)
+
+        print(f"Registering git repo: {args.path}")
+        success, repo, message = client.register_repo(
+            path=args.path,
+            display_name=args.display_name,
+            backend_url=args.backend_url,
+        )
+        if not success or not repo:
+            print("Failed to register repo.")
+            if message:
+                print(message)
+            sys.exit(1)
+
+        repo_id = repo.get("id")
+        repo_name = repo.get("name")
+        repo_path = repo.get("path")
+        print(f"Registered repo: id={repo_id} name={repo_name} path={repo_path}")
+
+        if args.default_branch:
+            success, updated_repo, message = client.update_repo_http(
+                repo_id=repo_id,
+                updates={"default_target_branch": args.default_branch},
+                backend_url=args.backend_url,
+            )
+            if not success or not updated_repo:
+                print(f"Repo registration succeeded, but failed to set default branch to '{args.default_branch}'.")
+                if message:
+                    print(message)
+                sys.exit(1)
+            print(f"Set repo default branch to: {args.default_branch}")
+
+        if not args.project_name and not args.project_id:
+            return
+
+        print("Fetching organizations and project...")
+        org, project, projects = _resolve_project_by_name_or_id(
+            client,
+            project_name=args.project_name,
+            project_id=args.project_id,
+        )
+        if not org:
+            print("Repo registration succeeded, but no Vibe Kanban organizations were found.")
+            print("Please make sure you are signed in to Vibe Kanban.")
+            sys.exit(1)
+        if not project:
+            project_ref = args.project_id or args.project_name
+            print(f"Repo registration succeeded, but project '{project_ref}' was not found.")
+            print("Available projects:")
+            for candidate in projects:
+                print(f"  - id={candidate.id} name={candidate.name}")
+            sys.exit(1)
+
+        success, existing_repos, message = client.get_project_repo_defaults(
+            project_id=project.id,
+            backend_url=args.backend_url,
+        )
+        if not success:
+            print(f"Repo registration succeeded, but failed to read defaults for project '{project.name}'.")
+            if message:
+                print(message)
+            sys.exit(1)
+
+        merged_defaults = _merge_project_repo_defaults(
+            existing=existing_repos,
+            repo_id=repo_id,
+            target_branch=args.default_branch,
+        )
+        success, _, message = client.set_project_repo_defaults(
+            project_id=project.id,
+            repos=merged_defaults,
+            backend_url=args.backend_url,
+        )
+        if not success:
+            print(f"Repo registration succeeded, but failed to bind default repo for project '{project.name}'.")
+            if message:
+                print(message)
+            sys.exit(1)
+        print(
+            f"Set project repo default: project={project.name} "
+            f"(id={project.id}) repo={repo_name} branch={args.default_branch}"
+        )
+    finally:
+        client.close()
+
+
 def cmd_watch_kanban(args: argparse.Namespace) -> None:
     """Run the watch-kanban command - promotes Backlog tasks whose blockers are Done."""
     from mcp_adapter import run_mcp_watch
@@ -357,6 +485,7 @@ Examples:
   uv run main.py deploy --project-name "Your Project Name"
   uv run main.py deploy -i my_decomposed_task.json -d my_dispatch.json --project-name "Your Project Name"
   uv run main.py deploy -i my_decomposed_task.json -d my_dispatch.json --no-watch   Export only, skip watcher
+  uv run main.py register-kanban-repo --path /path/to/repo --project-name "Your Project Name"
   uv run main.py auto-workspace --project-name "Your Project Name" --repo-name "ScrumAI" --github-repo owner/repo
   uv run main.py list-kanban-repos             List repo IDs for --repo-id
   uv run main.py list-kanban-projects          List project IDs for --project-id
@@ -534,6 +663,35 @@ Examples:
     )
     p_delete_repo.add_argument("--yes", action="store_true", help="Confirm repo deletion")
     p_delete_repo.set_defaults(func=cmd_delete_kanban_repo)
+
+    # register-kanban-repo
+    p_register_repo = subparsers.add_parser(
+        "register-kanban-repo",
+        help="Register a local git repository in Vibe Kanban and optionally bind it to a project",
+    )
+    p_register_repo.add_argument("--path", required=True, help="Path to the local git repository")
+    p_register_repo.add_argument(
+        "--display-name",
+        help="Optional Vibe Kanban display name for the repo (defaults to folder name)",
+    )
+    p_register_repo.add_argument(
+        "--default-branch",
+        default="main",
+        help="Default target branch to store for the repo and project defaults (default: main)",
+    )
+    p_register_repo.add_argument(
+        "--project-name",
+        help="Name of the Vibe Kanban project to bind this repo as a default",
+    )
+    p_register_repo.add_argument(
+        "--project-id",
+        help="Exact Vibe Kanban project UUID to bind this repo as a default",
+    )
+    p_register_repo.add_argument(
+        "--backend-url",
+        help="Vibe Kanban backend URL (default: VIBE_BACKEND_URL or http://127.0.0.1:63861)",
+    )
+    p_register_repo.set_defaults(func=cmd_register_kanban_repo)
 
     # watch-kanban
     p_watch = subparsers.add_parser(

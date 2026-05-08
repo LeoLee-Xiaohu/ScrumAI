@@ -42,11 +42,13 @@ uv run main.py deploy --project-name "ScrumAI Project" --no-watch
 
 ```bash
 uv run main.py auto-workspace \
-  --project-name "ScrumAI Project" \
-  --repo-name "ScrumAI" \
+  --project-name "NeckFlappy" \
+  --repo-name "NeckFlappy" \ 
+  --github-repo "Leolee-Xiaohu/NeckFlappy" \
   --base-branch main \
   --executor CODEX
 
+# or specify repo_id if the project has multiple repos
 uv run main.py auto-workspace \
   --project-name "NeckPacMan" \
   --repo-name "NeckPacMan" \
@@ -316,6 +318,35 @@ uv run main.py list-kanban-repos
 - id=f3ccb0dd-08d6-496d-b216-336aa45c4a3a name=NeckPacMan path=None default_branch=main
 ```
 
+注册本地 git repo 到 Vibe Kanban，并可选绑定到指定 project 的默认 repo / branch：
+
+```bash
+uv run main.py register-kanban-repo \
+  --path /absolute/path/to/NeckPacMan \
+  --display-name "NeckPacMan" \
+  --default-branch main \
+  --project-name "NeckPacMan"
+```
+
+输出示例：
+
+```text
+Starting Vibe Kanban MCP Server...
+Registering git repo: /absolute/path/to/NeckPacMan
+Registered repo: id=<repo-id> name=NeckPacMan path=/absolute/path/to/NeckPacMan
+Set repo default branch to: main
+Set project repo default: project=NeckPacMan (id=<project-id>) repo=NeckPacMan branch=main
+```
+
+说明：
+
+1. `register-kanban-repo` 会调用 Vibe Kanban 本地 backend 的 `POST /api/repos` 注册 repo。
+2. 如果同时传 `--project-name` 或 `--project-id`，还会把该 repo 写入该 project 的默认 repo 配置，便于后续创建 workspace。
+3. 如果 project 名称有歧义，优先使用 `--project-id`。
+4. 命令执行前会先解析 backend URL：优先使用 `--backend-url`，其次使用 `VIBE_BACKEND_URL`，否则自动探测本机监听端口里的 `/api/health`。
+5. 如果 backend 没启动或端口探测失败，会直接提示检查 `/api/health` 和 `--backend-url`。
+6. 如果 project 还没有保存过默认 repo 配置，读取 `PROJECT_REPO_DEFAULTS` 可能返回 `Scratch not found`；当前实现会把它当成空配置继续初始化。
+
 当出现重复 repo name 时，使用 `--repo-id` 启动：
 
 ```bash
@@ -362,10 +393,10 @@ uv run main.py delete-kanban-repo --repo-id <repo-id> --yes
 
 `delete-kanban-repo` 删除的是 Vibe Kanban 本地登记的 repo 记录，不是 GitHub repository，也不会删除本地源码目录。它通过本地 Vibe Kanban backend API 执行，因为当前 MCP 工具列表只有 `list_repos` / `get_repo`，没有 `delete_repo` 工具。
 
-默认 backend URL：
+backend URL 解析顺序：
 
 ```text
-VIBE_BACKEND_URL or http://127.0.0.1:63861
+--backend-url -> VIBE_BACKEND_URL -> 自动探测本机 /api/health -> 回退到 http://127.0.0.1:63861
 ```
 
 如果 Vibe Kanban backend 端口不同，可以显式传入：
@@ -375,6 +406,15 @@ uv run main.py delete-kanban-repo \
   --repo-id <repo-id> \
   --backend-url http://127.0.0.1:<port> \
   --yes
+```
+
+`register-kanban-repo` 也支持同样的 backend 覆盖：
+
+```bash
+uv run main.py register-kanban-repo \
+  --path /absolute/path/to/NeckPacMan \
+  --project-name "NeckPacMan" \
+  --backend-url http://127.0.0.1:<port>
 ```
 
 ## 模块设计
@@ -770,7 +810,19 @@ Vibe Kanban API is not reachable. Start Vibe Kanban with: npx vibe-kanban
 
 ### Repo 未注册
 
-报错并提示用户先在 Vibe Kanban UI 中添加 git repository。
+推荐先运行：
+
+```bash
+uv run main.py register-kanban-repo \
+  --path /absolute/path/to/your-repo \
+  --display-name "YourRepo" \
+  --default-branch main \
+  --project-name "Your Project"
+```
+
+如果 backend 不可用，或者当前 Vibe Kanban 版本行为不兼容，再退回到 Vibe Kanban UI 中手工添加 git repository。
+
+注意：如果 repo 已经注册成功，但 project 还没有任何默认 repo 配置，Vibe Kanban backend 首次读取该配置时可能返回 `Scratch not found`。当前命令会自动把这种情况视为“尚未初始化”，继续写入默认 repo，不需要手工预创建 scratch。
 
 ### Repo 名称重复
 
@@ -785,7 +837,7 @@ Vibe Kanban API is not reachable. Start Vibe Kanban with: npx vibe-kanban
 `delete-kanban-repo` 依赖 Vibe Kanban 本地 backend API。失败常见原因：
 
 - Vibe Kanban 没有运行。
-- backend 端口不是默认的 `63861`，需要传 `--backend-url` 或设置 `VIBE_BACKEND_URL`。
+- backend 端口不是默认的 `63861`，需要传 `--backend-url`、设置 `VIBE_BACKEND_URL`，或依赖自动端口探测命中正确的 `/api/health`。
 - Vibe Kanban backend 当前版本不支持 `DELETE /api/repos/{repo_id}`。
 - repo 仍被 workspace 或 project 引用，backend 拒绝删除。
 

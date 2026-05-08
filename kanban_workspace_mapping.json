@@ -64,21 +64,42 @@
       },
       "issue_linked": true,
       "issue_linked_at": "2026-05-07T12:33:45.266172+00:00"
+    },
+    "68493136-e61c-4585-8c40-84b8b1e33f1d": {
+      "state": "created",
+      "issue_id": "68493136-e61c-4585-8c40-84b8b1e33f1d",
+      "issue_simple_id": "LEO-79",
+      "issue_title": "[STORY-001] Initialize Project Structure & Canvas Setup",
+      "repo_id": "1f3f87d3-7f1a-4932-a806-01dc08b960d8",
+      "base_branch": "main",
+      "executor": "CODEX",
+      "executor_model_id": "gpt-5.4",
+      "started_at": "2026-05-08T04:37:31.262559+00:00",
+      "workspace_id": "bf66e365-6f10-4e16-b74a-1584919cd287",
+      "session_id": "db58c189-4e0f-4a0a-bf6f-806094afc597",
+      "execution_id": null,
+      "workspace_branch": null,
+      "created_at": "2026-05-08T04:37:34.758576+00:00",
+      "start_workspace_response": {
+        "workspace_id": "bf66e365-6f10-4e16-b74a-1584919cd287"
+      },
+      "issue_linked": true,
+      "issue_linked_at": "2026-05-08T04:37:35.257734+00:00"
     }
   },
-  "project_id": "5752a0ea-05ff-49e6-b080-fabaf5b67423",
-  "project_name": "NeckPacMan",
+  "project_id": "a88358ae-e0ae-4ae8-ab9b-227167fb4a9a",
+  "project_name": "NeckFlappy",
   "organization_id": "b32696dc-8d6b-4284-88e6-13ca87dd4ecb",
-  "repo_id": "f3ccb0dd-08d6-496d-b216-336aa45c4a3a",
-  "repo_name": "NeckPacMan",
+  "repo_id": "1f3f87d3-7f1a-4932-a806-01dc08b960d8",
+  "repo_name": "NeckFlappy",
   "repo_path": null,
   "executor": "CODEX",
   "base_branch": "main",
   "github": {
     "owner": "Leolee-Xiaohu",
-    "repo": "NeckPacMan",
+    "repo": "NeckFlappy",
     "base": "main",
-    "full_name": "Leolee-Xiaohu/NeckPacMan"
+    "full_name": "Leolee-Xiaohu/NeckFlappy"
   },
   "executor_model_id": "gpt-5.4"
 }

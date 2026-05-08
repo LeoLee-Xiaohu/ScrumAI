@@ -18,7 +18,8 @@ MCP_SERVER_CMD = ["npx", "-y", "vibe-kanban@0.1.43", "--mcp"]
 MCP_CALL_TIMEOUT_SECONDS = 60
 MCP_STARTUP_TIMEOUT_SECONDS = 120
 MCP_RESPONSE_POLL_INTERVAL_SECONDS = 1
-VIBE_BACKEND_URL = os.environ.get("VIBE_BACKEND_URL", "http://127.0.0.1:63861")
+VIBE_BACKEND_DEFAULT_URL = "http://127.0.0.1:63861"
+VIBE_BACKEND_URL = os.environ.get("VIBE_BACKEND_URL", VIBE_BACKEND_DEFAULT_URL)
 
 @dataclass
 class McpOrganization:
@@ -583,22 +584,229 @@ class McpClient:
         The MCP server exposes list/get/update repo operations but not delete_repo,
         so this uses the same local backend that MCP calls internally.
         """
-        base_url = (backend_url or VIBE_BACKEND_URL).rstrip("/")
-        url = f"{base_url}/api/repos/{repo_id}"
-        request = urllib.request.Request(url, method="DELETE")
+        success, _, message = self._backend_request(
+            path=f"/api/repos/{repo_id}",
+            method="DELETE",
+            backend_url=backend_url,
+        )
+        return success, message
+
+    def register_repo(
+        self,
+        path: str,
+        display_name: str | None = None,
+        backend_url: str = None,
+    ) -> tuple[bool, dict | None, str]:
+        """Register a git repository in Vibe Kanban via the local backend API."""
+        payload: dict[str, str] = {"path": path}
+        if display_name:
+            payload["display_name"] = display_name
+        return self._backend_request(
+            path="/api/repos",
+            method="POST",
+            payload=payload,
+            backend_url=backend_url,
+        )
+
+    def check_backend_health(
+        self,
+        backend_url: str = None,
+    ) -> tuple[bool, str]:
+        """Check whether the Vibe Kanban local backend is reachable."""
+        success, data, message = self._backend_request(
+            path="/api/health",
+            method="GET",
+            backend_url=backend_url,
+        )
+        if success:
+            if isinstance(data, str) and data:
+                return True, data
+            return True, "OK"
+        return False, message
+
+    def resolve_backend_url(self, backend_url: str = None) -> str:
+        """Resolve the Vibe Kanban backend URL from explicit config or local discovery."""
+        if backend_url:
+            return backend_url.rstrip("/")
+
+        env_url = os.environ.get("VIBE_BACKEND_URL")
+        if env_url:
+            return env_url.rstrip("/")
+
+        discovered = self._discover_backend_url()
+        if discovered:
+            return discovered
+
+        return VIBE_BACKEND_DEFAULT_URL
+
+    def update_repo_http(
+        self,
+        repo_id: str,
+        updates: dict,
+        backend_url: str = None,
+    ) -> tuple[bool, dict | None, str]:
+        """Update a Vibe Kanban repository via the local backend API."""
+        return self._backend_request(
+            path=f"/api/repos/{repo_id}",
+            method="PUT",
+            payload=updates,
+            backend_url=backend_url,
+        )
+
+    def get_project_repo_defaults(
+        self,
+        project_id: str,
+        backend_url: str = None,
+    ) -> tuple[bool, list[dict] | None, str]:
+        """Fetch project default repos from scratch storage."""
+        success, data, message = self._backend_request(
+            path=f"/api/scratch/PROJECT_REPO_DEFAULTS/{project_id}",
+            method="GET",
+            backend_url=backend_url,
+        )
+        if not success:
+            if message.startswith("HTTP 404") or message == "HTTP 400: Scratch not found":
+                return True, None, message
+            return False, None, message
+
+        payload = data.get("payload") if isinstance(data, dict) else None
+        if not isinstance(payload, dict):
+            return True, None, "Project repo defaults payload was missing."
+        scratch_data = payload.get("data")
+        if not isinstance(scratch_data, dict):
+            return True, None, "Project repo defaults data was missing."
+        repos = scratch_data.get("repos")
+        if repos is None:
+            return True, [], ""
+        if not isinstance(repos, list):
+            return False, None, "Project repo defaults were malformed."
+        return True, repos, ""
+
+    def set_project_repo_defaults(
+        self,
+        project_id: str,
+        repos: list[dict],
+        backend_url: str = None,
+    ) -> tuple[bool, dict | None, str]:
+        """Persist project default repos to scratch storage."""
+        return self._backend_request(
+            path=f"/api/scratch/PROJECT_REPO_DEFAULTS/{project_id}",
+            method="PUT",
+            payload={
+                "payload": {
+                    "type": "PROJECT_REPO_DEFAULTS",
+                    "data": {"repos": repos},
+                }
+            },
+            backend_url=backend_url,
+        )
+
+    def _backend_request(
+        self,
+        path: str,
+        method: str,
+        payload: dict | None = None,
+        backend_url: str = None,
+    ) -> tuple[bool, dict | None, str]:
+        """Call the Vibe Kanban local backend and unwrap ApiResponse envelopes."""
+        base_url = self.resolve_backend_url(backend_url)
+        url = f"{base_url}{path}"
+        headers = {}
+        body = None
+        if payload is not None:
+            body = json.dumps(payload).encode("utf-8")
+            headers["Content-Type"] = "application/json"
+        request = urllib.request.Request(url, data=body, headers=headers, method=method)
         try:
             with urllib.request.urlopen(request, timeout=30) as response:
-                body = response.read().decode("utf-8", errors="replace")
+                response_body = response.read().decode("utf-8", errors="replace")
+                data, message = self._parse_backend_response_body(response_body)
                 if 200 <= response.status < 300:
-                    return True, body
-                return False, f"HTTP {response.status}: {body}"
+                    return True, data, message
+                return False, data, f"HTTP {response.status}: {response_body}"
         except urllib.error.HTTPError as e:
-            body = e.read().decode("utf-8", errors="replace")
-            return False, f"HTTP {e.code}: {body}"
+            body_text = e.read().decode("utf-8", errors="replace")
+            _, message = self._parse_backend_response_body(body_text)
+            if message:
+                return False, None, f"HTTP {e.code}: {message}"
+            return False, None, f"HTTP {e.code}: {body_text}"
         except urllib.error.URLError as e:
-            return False, f"Could not connect to Vibe Kanban backend at {base_url}: {e.reason}"
+            return False, None, f"Could not connect to Vibe Kanban backend at {base_url}: {e.reason}"
         except Exception as e:
-            return False, str(e)
+            return False, None, str(e)
+
+    @staticmethod
+    def _parse_backend_response_body(body: str) -> tuple[dict | None, str]:
+        if not body:
+            return None, ""
+        try:
+            parsed = json.loads(body)
+        except json.JSONDecodeError:
+            return None, body
+
+        if isinstance(parsed, dict):
+            data = parsed.get("data")
+            message = parsed.get("message")
+            if isinstance(message, str):
+                return data, message
+            return data, ""
+        return None, body
+
+    @staticmethod
+    def _discover_backend_url() -> str | None:
+        """Probe listening localhost ports and return the first Vibe Kanban backend health endpoint."""
+        ports = McpClient._list_local_listening_ports()
+        for port in ports:
+            candidate = f"http://127.0.0.1:{port}"
+            request = urllib.request.Request(f"{candidate}/api/health", method="GET")
+            try:
+                with urllib.request.urlopen(request, timeout=1) as response:
+                    if not (200 <= response.status < 300):
+                        continue
+                    body = response.read().decode("utf-8", errors="replace")
+                    parsed = json.loads(body)
+                    if isinstance(parsed, dict) and parsed.get("success") is True:
+                        return candidate
+            except Exception:
+                continue
+        return None
+
+    @staticmethod
+    def _list_local_listening_ports() -> list[int]:
+        try:
+            result = subprocess.run(
+                ["lsof", "-nP", "-iTCP", "-sTCP:LISTEN"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
+            )
+        except Exception:
+            return []
+
+        ports: list[int] = []
+        seen: set[int] = set()
+        for line in result.stdout.splitlines()[1:]:
+            parts = line.split()
+            if len(parts) < 9:
+                continue
+            endpoint = parts[8]
+            host_port = endpoint.rsplit("->", 1)[0]
+            if ":" not in host_port:
+                continue
+            host, port_str = host_port.rsplit(":", 1)
+            host = host.strip()
+            if host not in {"127.0.0.1", "localhost", "*"} and not host.endswith(".localhost"):
+                continue
+            try:
+                port = int(port_str)
+            except ValueError:
+                continue
+            if port < 1024 or port in seen:
+                continue
+            seen.add(port)
+            ports.append(port)
+        return ports
 
     def close(self):
         if self.process:
