@@ -37,6 +37,14 @@ uv run main.py decompose -t "你的项目目标描述"
 ```bash
 uv run main.py decompose -t "Build a REST API for managing items with CRUD operations using FastAPI and SQLite"
 ```
+或者
+```bash
+uv run main.py decompose -f "<your project PRD.md path>"
+```
+例如：
+```bash
+uv run main.py decompose -f "../Projects/NeckFlappy/docs/PRD.md"
+```
 
 这会生成 `decomposed_task.json` 文件。
 
