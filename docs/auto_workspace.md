@@ -65,6 +65,26 @@ uv run main.py auto-workspace \
 7. 当 Codex execution 成功结束，watcher 在 workspace 分支上创建 GitHub PR。
 8. watcher 将 ticket 从 `In progress` 移动到 `In review`，并把 PR URL 写入 mapping；后续人工 review / merge。
 
+### 当前 MCP 限制与修正
+
+在 `vibe-kanban@0.1.43` 上，单靠 MCP 返回值不足以稳定完成第 7/8 步：
+
+1. `start_workspace` 的 MCP 返回通常只有 `workspace_id`，不稳定包含 `execution_id` / `workspace_branch`。
+2. `list_sessions` 的 MCP summary 只保证基础 session 字段，不保证带 `execution_id`、绝对 worktree 路径，或可直接用于 PR 创建的 repo path。
+3. 如果实现只依赖 MCP 返回的 `execution_id`，watcher 可能永远无法进入“execution completed -> create PR -> move In review”链路。
+
+当前实现已改为：
+
+1. 仍然用 MCP `start_workspace` 创建 workspace。
+2. workspace 创建后，立即走 Vibe Kanban 本地 backend API 补全：
+   - workspace `branch`
+   - workspace absolute repo/editor path
+   - latest session id
+   - latest process status
+3. 后续轮询中，如果 MCP 仍拿不到 `execution_id`，则退化为根据 backend summary 的 `latest_process_status` 判断 execution 是否已完成，再执行 PR 创建和 `In review` 更新。
+
+因此，7/8 步现在不再依赖 `start_workspace` 必须返回 `execution_id`。
+
 ## 状态触发规则
 
 ### Workspace 触发条件
@@ -129,8 +149,10 @@ uv run main.py auto-workspace \
 只对满足以下条件的 workspace 创建 PR 并移动 ticket：
 
 - issue 当前状态仍是 `In progress`。
-- mapping 中已有该 issue 对应的 `workspace_id` 和 `execution_id`。
-- `get_execution(execution_id)` 显示 agent execution 已成功完成。
+- mapping 中已有该 issue 对应的 `workspace_id`。
+- 满足以下两种路径之一：
+  - `get_execution(execution_id)` 显示 agent execution 已成功完成。
+  - backend summary 的 `latest_process_status` 显示最新 process 已成功完成。
 - workspace branch 存在可提交 / 可推送的代码变更。
 - mapping 中还没有 `pull_request.url`。
 

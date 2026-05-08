@@ -78,13 +78,120 @@
       "workspace_id": "bf66e365-6f10-4e16-b74a-1584919cd287",
       "session_id": "db58c189-4e0f-4a0a-bf6f-806094afc597",
       "execution_id": null,
-      "workspace_branch": null,
+      "workspace_branch": "vk/bf66-story-001-initia",
       "created_at": "2026-05-08T04:37:34.758576+00:00",
       "start_workspace_response": {
         "workspace_id": "bf66e365-6f10-4e16-b74a-1584919cd287"
       },
       "issue_linked": true,
-      "issue_linked_at": "2026-05-08T04:37:35.257734+00:00"
+      "issue_linked_at": "2026-05-08T04:37:35.257734+00:00",
+      "workspace_archived": false,
+      "repo_path": "/Users/leo/AI-Projects/NeckFlappy/",
+      "target_branch": "main",
+      "latest_process_status": "completed",
+      "latest_process_completed_at": "2026-05-08T04:40:04.018432Z",
+      "agent_working_dir": "NeckFlappy",
+      "execution": {
+        "state": "completed",
+        "raw": {
+          "status": "completed",
+          "completed_at": "2026-05-08T04:40:04.018432Z"
+        },
+        "updated_at": "2026-05-08T04:58:33.519611+00:00"
+      },
+      "pr_state": "failed",
+      "pr_error": "Could not checkout branch vk/bf66-story-001-initia: fatal: 'vk/bf66-story-001-initia' is already used by worktree at '/private/var/folders/cd/s_cldwzx03jdbr46xjs0_tkc0000gn/T/vibe-kanban/worktrees/bf66-story-001-initia/NeckFlappy'"
+    },
+    "254163c6-e56c-4c75-891f-f59f983ffa81": {
+      "state": "created",
+      "issue_id": "254163c6-e56c-4c75-891f-f59f983ffa81",
+      "issue_simple_id": "LEO-83",
+      "issue_title": "[STORY-003] Integrate MediaPipe Face Mesh",
+      "repo_id": "1f3f87d3-7f1a-4932-a806-01dc08b960d8",
+      "base_branch": "main",
+      "executor": "CODEX",
+      "executor_model_id": "gpt-5.4",
+      "started_at": "2026-05-08T05:00:03.209645+00:00",
+      "workspace_id": "1d2bb9d7-1e11-4739-be6f-5816c37ebc3f",
+      "session_id": "ae2748ff-53e9-4ac4-b627-ac1eb99b066c",
+      "execution_id": null,
+      "workspace_branch": "vk/1d2b-story-003-integr",
+      "created_at": "2026-05-08T05:00:07.615340+00:00",
+      "start_workspace_response": {
+        "workspace_id": "1d2bb9d7-1e11-4739-be6f-5816c37ebc3f"
+      },
+      "workspace_archived": false,
+      "repo_path": "/var/folders/cd/s_cldwzx03jdbr46xjs0_tkc0000gn/T/vibe-kanban/worktrees/1d2b-story-003-integr/NeckFlappy",
+      "target_branch": "main",
+      "latest_process_status": "completed",
+      "agent_working_dir": "NeckFlappy",
+      "issue_linked": true,
+      "issue_linked_at": "2026-05-08T05:00:26.273236+00:00",
+      "latest_process_completed_at": "2026-05-08T05:03:27.254383Z",
+      "execution": {
+        "state": "completed",
+        "raw": {
+          "status": "completed",
+          "completed_at": "2026-05-08T05:03:27.254383Z"
+        },
+        "updated_at": "2026-05-08T05:19:34.731633+00:00"
+      },
+      "pr_state": "failed",
+      "pr_error": "a pull request for branch \"vk/1d2b-story-003-integr\" into branch \"main\" already exists:\nhttps://github.com/LeoLee-Xiaohu/NeckFlappy/pull/2",
+      "workspace_container_ref": "/var/folders/cd/s_cldwzx03jdbr46xjs0_tkc0000gn/T/vibe-kanban/worktrees/1d2b-story-003-integr",
+      "working_dir": "/var/folders/cd/s_cldwzx03jdbr46xjs0_tkc0000gn/T/vibe-kanban/worktrees/1d2b-story-003-integr/NeckFlappy",
+      "source_repo_path": "/Users/leo/AI-Projects/NeckFlappy/"
+    },
+    "28505637-4993-429b-b63b-a0db7e31694f": {
+      "state": "created",
+      "issue_id": "28505637-4993-429b-b63b-a0db7e31694f",
+      "issue_simple_id": "LEO-80",
+      "issue_title": "[STORY-001] Develop Game State UI Overlays",
+      "repo_id": "1f3f87d3-7f1a-4932-a806-01dc08b960d8",
+      "base_branch": "main",
+      "executor": "CODEX",
+      "executor_model_id": "gpt-5.4",
+      "started_at": "2026-05-08T05:20:38.590429+00:00",
+      "workspace_id": "f0608d35-9bea-416e-ae69-2e795e3c1978",
+      "session_id": "5fdd21dc-ee4a-4a8f-8d85-6341d8c3d849",
+      "execution_id": null,
+      "workspace_branch": "vk/f060-story-001-develo",
+      "created_at": "2026-05-08T05:20:42.020416+00:00",
+      "start_workspace_response": {
+        "workspace_id": "f0608d35-9bea-416e-ae69-2e795e3c1978"
+      },
+      "workspace_archived": false,
+      "workspace_container_ref": "/var/folders/cd/s_cldwzx03jdbr46xjs0_tkc0000gn/T/vibe-kanban/worktrees/f060-story-001-develo",
+      "repo_path": "/var/folders/cd/s_cldwzx03jdbr46xjs0_tkc0000gn/T/vibe-kanban/worktrees/f060-story-001-develo/NeckFlappy",
+      "working_dir": "/var/folders/cd/s_cldwzx03jdbr46xjs0_tkc0000gn/T/vibe-kanban/worktrees/f060-story-001-develo/NeckFlappy",
+      "source_repo_path": "/Users/leo/AI-Projects/NeckFlappy/",
+      "target_branch": "main",
+      "latest_process_status": "completed",
+      "agent_working_dir": "NeckFlappy",
+      "issue_linked": true,
+      "issue_linked_at": "2026-05-08T05:21:00.177526+00:00",
+      "latest_process_completed_at": "2026-05-08T05:23:42.727827Z",
+      "execution": {
+        "state": "completed",
+        "raw": {
+          "status": "completed",
+          "completed_at": "2026-05-08T05:23:42.727827Z"
+        },
+        "updated_at": "2026-05-08T05:27:57.190874+00:00"
+      },
+      "pr_state": "created",
+      "pr_error": "pull request create failed: GraphQL: Resource not accessible by personal access token (createPullRequest)",
+      "pull_request": {
+        "url": "https://github.com/LeoLee-Xiaohu/NeckFlappy/pull/4",
+        "number": 4,
+        "head": "vk/f060-story-001-develo",
+        "base": "main",
+        "github_repo": "Leolee-Xiaohu/NeckFlappy",
+        "created_at": "2026-05-08T05:28:01.172543+00:00"
+      },
+      "pr_created_at": "2026-05-08T05:28:01.172680+00:00",
+      "issue_status_after_pr": "In review",
+      "issue_status_updated_at": "2026-05-08T05:28:03.960734+00:00"
     }
   },
   "project_id": "a88358ae-e0ae-4ae8-ab9b-227167fb4a9a",

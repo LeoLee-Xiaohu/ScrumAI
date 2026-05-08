@@ -770,6 +770,10 @@ Examples:
         help="Only create workspaces; do not create PRs or move issues to review",
     )
     p_auto_workspace.add_argument(
+        "--backend-url",
+        help="Vibe Kanban backend URL for workspace metadata recovery (default: auto-discover, then VIBE_BACKEND_URL, then http://127.0.0.1:63861)",
+    )
+    p_auto_workspace.add_argument(
         "--mapping", default="kanban_workspace_mapping.json",
         help="Path to issue -> workspace/PR mapping file",
     )

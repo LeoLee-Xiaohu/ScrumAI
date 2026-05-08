@@ -9,7 +9,7 @@ import urllib.error
 import urllib.request
 from collections import deque
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional
 from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
@@ -682,6 +682,94 @@ class McpClient:
             return False, None, "Project repo defaults were malformed."
         return True, repos, ""
 
+    def get_workspace_http(
+        self,
+        workspace_id: str,
+        backend_url: str = None,
+    ) -> tuple[bool, dict | None, str]:
+        """Fetch a workspace from the local backend API."""
+        success, data, message = self._backend_request(
+            path=f"/api/workspaces/{workspace_id}",
+            method="GET",
+            backend_url=backend_url,
+        )
+        if not isinstance(data, dict):
+            return success, None, message
+        return success, data, message
+
+    def get_workspace_repos_http(
+        self,
+        workspace_id: str,
+        backend_url: str = None,
+    ) -> tuple[bool, list[dict] | None, str]:
+        """Fetch repos attached to a workspace from the local backend API."""
+        success, data, message = self._backend_request(
+            path=f"/api/workspaces/{workspace_id}/repos",
+            method="GET",
+            backend_url=backend_url,
+        )
+        if not isinstance(data, list):
+            return success, None, message
+        return success, data, message
+
+    def get_workspace_editor_path_http(
+        self,
+        workspace_id: str,
+        backend_url: str = None,
+    ) -> tuple[bool, str | None, str]:
+        """Fetch the absolute editor path for a workspace from the local backend API."""
+        success, data, message = self._backend_request(
+            path=f"/api/workspaces/{workspace_id}/integration/editor/path",
+            method="GET",
+            backend_url=backend_url,
+        )
+        if not isinstance(data, dict):
+            return success, None, message
+        workspace_path = data.get("workspace_path")
+        if not isinstance(workspace_path, str):
+            return success, None, message
+        return success, workspace_path, message
+
+    def get_session_http(
+        self,
+        session_id: str,
+        backend_url: str = None,
+    ) -> tuple[bool, dict | None, str]:
+        """Fetch a session from the local backend API."""
+        success, data, message = self._backend_request(
+            path=f"/api/sessions/{session_id}",
+            method="GET",
+            backend_url=backend_url,
+        )
+        if not isinstance(data, dict):
+            return success, None, message
+        return success, data, message
+
+    def get_workspace_summary_http(
+        self,
+        workspace_id: str,
+        archived: bool = False,
+        backend_url: str = None,
+    ) -> tuple[bool, dict | None, str]:
+        """Fetch summary information for a workspace from the local backend API."""
+        success, data, message = self._backend_request(
+            path="/api/workspaces/summaries",
+            method="POST",
+            payload={"archived": archived},
+            backend_url=backend_url,
+        )
+        if not success:
+            return False, None, message
+        if not isinstance(data, dict):
+            return False, None, "Workspace summaries payload was malformed."
+        summaries = data.get("summaries")
+        if not isinstance(summaries, list):
+            return False, None, "Workspace summaries list was missing."
+        for summary in summaries:
+            if isinstance(summary, dict) and str(summary.get("workspace_id") or "") == str(workspace_id):
+                return True, summary, ""
+        return False, None, f"Workspace summary for {workspace_id} was not found."
+
     def set_project_repo_defaults(
         self,
         project_id: str,
@@ -707,7 +795,7 @@ class McpClient:
         method: str,
         payload: dict | None = None,
         backend_url: str = None,
-    ) -> tuple[bool, dict | None, str]:
+    ) -> tuple[bool, Any, str]:
         """Call the Vibe Kanban local backend and unwrap ApiResponse envelopes."""
         base_url = self.resolve_backend_url(backend_url)
         url = f"{base_url}{path}"
@@ -736,7 +824,7 @@ class McpClient:
             return False, None, str(e)
 
     @staticmethod
-    def _parse_backend_response_body(body: str) -> tuple[dict | None, str]:
+    def _parse_backend_response_body(body: str) -> tuple[Any, str]:
         if not body:
             return None, ""
         try:

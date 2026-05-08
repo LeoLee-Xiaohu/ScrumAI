@@ -42,6 +42,7 @@ def run_auto_workspace(args) -> bool:
     base_branch = getattr(args, "base_branch", "main") or "main"
     pr_base = getattr(args, "pr_base", None) or base_branch
     review_status = getattr(args, "review_status", "In review") or "In review"
+    backend_url = getattr(args, "backend_url", None)
 
     if not skip_pr and not dry_run and not _check_gh_available():
         return False
@@ -175,6 +176,7 @@ def run_auto_workspace(args) -> bool:
                         mapping=mapping,
                         mapping_path=mapping_path,
                         dry_run=dry_run,
+                        backend_url=backend_url,
                     )
 
                 previous_status_by_issue_id[issue.id] = current_status
@@ -458,6 +460,7 @@ def _start_issue_workspace(
         "created_at": _utc_now(),
         "start_workspace_response": result,
     })
+    _supplement_workspace_record_from_backend(client, records[issue.id], repo)
     _ensure_workspace_issue_link(
         client=client,
         issue=issue,
@@ -566,6 +569,112 @@ def _latest_session_execution_id(
     return None
 
 
+def _supplement_workspace_record_from_backend(
+    client: McpClient,
+    record: dict[str, Any] | None,
+    repo: dict[str, Any],
+    backend_url: str | None = None,
+) -> bool:
+    if not record:
+        return False
+
+    changed = False
+    workspace_id = record.get("workspace_id")
+    if not workspace_id:
+        return False
+
+    workspace: dict[str, Any] | None = None
+    success, workspace, _ = client.get_workspace_http(str(workspace_id), backend_url=backend_url)
+    if success and workspace:
+        branch = workspace.get("branch")
+        if branch and record.get("workspace_branch") != branch:
+            record["workspace_branch"] = branch
+            changed = True
+        archived = workspace.get("archived")
+        if archived is not None and record.get("workspace_archived") != archived:
+            record["workspace_archived"] = archived
+            changed = True
+        container_ref = workspace.get("container_ref")
+        if container_ref and record.get("workspace_container_ref") != container_ref:
+            record["workspace_container_ref"] = container_ref
+            changed = True
+
+    success, editor_path, _ = client.get_workspace_editor_path_http(
+        str(workspace_id),
+        backend_url=backend_url,
+    )
+    if success and editor_path:
+        if record.get("repo_path") != editor_path:
+            record["repo_path"] = editor_path
+            changed = True
+        if record.get("working_dir") != editor_path:
+            record["working_dir"] = editor_path
+            changed = True
+
+    success, workspace_repos, _ = client.get_workspace_repos_http(
+        str(workspace_id),
+        backend_url=backend_url,
+    )
+    if success and workspace_repos:
+        wanted_repo_id = str(record.get("repo_id") or repo.get("id") or "")
+        selected_repo = None
+        for candidate in workspace_repos:
+            if str(candidate.get("id") or "") == wanted_repo_id:
+                selected_repo = candidate
+                break
+        if not selected_repo:
+            selected_repo = workspace_repos[0]
+        container_ref = record.get("workspace_container_ref")
+        repo_name = selected_repo.get("name")
+        if container_ref and repo_name:
+            worktree_repo_path = str(Path(str(container_ref)) / str(repo_name))
+            if record.get("repo_path") != worktree_repo_path:
+                record["repo_path"] = worktree_repo_path
+                changed = True
+            if record.get("working_dir") != worktree_repo_path:
+                record["working_dir"] = worktree_repo_path
+                changed = True
+        repo_path = selected_repo.get("path")
+        if repo_path and record.get("source_repo_path") != repo_path:
+            record["source_repo_path"] = repo_path
+            changed = True
+        target_branch = selected_repo.get("target_branch")
+        if target_branch and not record.get("target_branch"):
+            record["target_branch"] = target_branch
+            changed = True
+
+    archived = bool(record.get("workspace_archived", False))
+    success, summary, _ = client.get_workspace_summary_http(
+        str(workspace_id),
+        archived=archived,
+        backend_url=backend_url,
+    )
+    if success and summary:
+        latest_session_id = summary.get("latest_session_id")
+        if latest_session_id and str(record.get("session_id") or "") != str(latest_session_id):
+            record["session_id"] = str(latest_session_id)
+            changed = True
+        latest_process_status = summary.get("latest_process_status")
+        if latest_process_status and record.get("latest_process_status") != latest_process_status:
+            record["latest_process_status"] = latest_process_status
+            changed = True
+        latest_process_completed_at = summary.get("latest_process_completed_at")
+        if latest_process_completed_at and record.get("latest_process_completed_at") != latest_process_completed_at:
+            record["latest_process_completed_at"] = latest_process_completed_at
+            changed = True
+
+    session_id = record.get("session_id")
+    if session_id:
+        success, session, _ = client.get_session_http(str(session_id), backend_url=backend_url)
+        if success and session:
+            agent_working_dir = session.get("agent_working_dir")
+            if agent_working_dir and record.get("agent_working_dir") != agent_working_dir:
+                record["agent_working_dir"] = agent_working_dir
+                changed = True
+
+    return changed
+
+
 def _maybe_create_pr_and_review(
     client: McpClient,
     issue: McpIssue,
@@ -579,11 +688,14 @@ def _maybe_create_pr_and_review(
     mapping: dict[str, Any],
     mapping_path: Path,
     dry_run: bool,
+    backend_url: str | None = None,
 ) -> None:
     if current_status not in IN_PROGRESS_STATUSES:
         return
     if not record:
         return
+    if _supplement_workspace_record_from_backend(client, record, repo, backend_url=backend_url):
+        _save_mapping(mapping_path, mapping)
     if not record.get("execution_id"):
         workspace_id = record.get("workspace_id")
         if not workspace_id:
@@ -593,20 +705,23 @@ def _maybe_create_pr_and_review(
             str(workspace_id),
             str(record.get("session_id") or "") or None,
         )
-        if not recovered_execution_id:
-            return
-        record["execution_id"] = recovered_execution_id
-        record["execution_id_recovered_at"] = _utc_now()
-        _save_mapping(mapping_path, mapping)
+        if recovered_execution_id:
+            record["execution_id"] = recovered_execution_id
+            record["execution_id_recovered_at"] = _utc_now()
+            _save_mapping(mapping_path, mapping)
     if record.get("pull_request", {}).get("url"):
         return
-    if record.get("pr_state") in {"no_changes", "failed"}:
+    if record.get("pr_state") in {"no_changes"}:
         return
 
-    execution = client.get_execution(str(record["execution_id"]))
-    if not execution:
-        return
-    if _is_execution_failed(execution):
+    execution: dict[str, Any] | None = None
+    if record.get("execution_id"):
+        execution = client.get_execution(str(record["execution_id"]))
+        if not execution:
+            return
+
+    latest_process_status = str(record.get("latest_process_status") or "")
+    if execution and _is_execution_failed(execution):
         record["execution"] = {
             "state": "failed",
             "message": execution.get("message") or execution.get("final_message") or execution.get("status"),
@@ -616,13 +731,28 @@ def _maybe_create_pr_and_review(
         _save_mapping(mapping_path, mapping)
         print(f"[execution] failed for {issue.title}; leaving issue in In progress")
         return
-    if not _is_execution_success(execution):
+    if not execution and latest_process_status.lower() in FAILED_EXECUTION_STATUSES:
+        record["execution"] = {
+            "state": "failed",
+            "message": latest_process_status,
+            "raw": {"status": latest_process_status},
+            "updated_at": _utc_now(),
+        }
+        _save_mapping(mapping_path, mapping)
+        print(f"[execution] failed for {issue.title}; leaving issue in In progress")
+        return
+    if execution and not _is_execution_success(execution):
+        return
+    if not execution and latest_process_status.lower() not in COMPLETED_EXECUTION_STATUSES:
         return
 
     print(f"[execution] completed for {issue.title}; preparing PR")
     record["execution"] = {
         "state": "completed",
-        "raw": execution,
+        "raw": execution or {
+            "status": latest_process_status,
+            "completed_at": record.get("latest_process_completed_at"),
+        },
         "updated_at": _utc_now(),
     }
 
@@ -790,9 +920,17 @@ def create_pull_request(
     if draft:
         cmd.append("--draft")
 
-    result = subprocess.run(cmd, cwd=str(repo_dir), text=True, capture_output=True, check=False)
+    result = subprocess.run(
+        cmd,
+        cwd=str(repo_dir),
+        text=True,
+        capture_output=True,
+        check=False,
+        env=_gh_subprocess_env(),
+    )
     if result.returncode != 0:
-        raise RuntimeError((result.stderr or result.stdout).strip())
+        detail = (result.stderr or result.stdout).strip()
+        raise RuntimeError(_format_gh_pr_create_error(detail))
 
     url = result.stdout.strip().splitlines()[-1].strip()
     number = _pr_number_from_url(url)
@@ -815,13 +953,62 @@ def _check_gh_available() -> bool:
     if not shutil.which("gh"):
         print("Error: GitHub CLI 'gh' is not installed. Install gh or run with --skip-pr.")
         return False
-    result = subprocess.run(["gh", "auth", "status"], text=True, capture_output=True, check=False)
+    result = subprocess.run(
+        ["gh", "auth", "status"],
+        text=True,
+        capture_output=True,
+        check=False,
+        env=_gh_subprocess_env(),
+    )
     if result.returncode != 0:
         print("Error: GitHub CLI is not authenticated. Run: gh auth login")
         if result.stderr.strip():
             print(result.stderr.strip())
         return False
     return True
+
+
+def _gh_subprocess_env() -> dict[str, str]:
+    env = os.environ.copy()
+    # Let gh use its stored login by default instead of a possibly stale process-level token.
+    env.pop("GH_TOKEN", None)
+    env.pop("GITHUB_TOKEN", None)
+    return env
+
+
+def _gh_auth_status_summary() -> str:
+    result = subprocess.run(
+        ["gh", "auth", "status"],
+        text=True,
+        capture_output=True,
+        check=False,
+        env=_gh_subprocess_env(),
+    )
+    output = (result.stdout or result.stderr).strip()
+    if not output:
+        return "gh auth status produced no output"
+    lines: list[str] = []
+    for raw_line in output.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if "Token:" in line:
+            continue
+        lines.append(line)
+    return " | ".join(lines[:6])
+
+
+def _format_gh_pr_create_error(detail: str) -> str:
+    message = detail.strip()
+    lower = message.lower()
+    if "resource not accessible by personal access token" not in lower:
+        return message
+    auth_summary = _gh_auth_status_summary()
+    return (
+        "GitHub CLI could not create the PR with the authentication available to this watcher process. "
+        "This usually means the process inherited a stale GH_TOKEN/GITHUB_TOKEN or is not using the same gh "
+        f"login state as your interactive shell. gh auth summary: {auth_summary}. Original error: {message}"
+    )
 
 
 def _ensure_git_repo(repo_dir: Path) -> None:

@@ -2,6 +2,8 @@ from runners.auto_workspace import (
     IN_PROGRESS_STATUSES,
     _ensure_workspace_issue_link,
     _extract_execution_id,
+    _format_gh_pr_create_error,
+    _gh_subprocess_env,
     _is_execution_failed,
     _is_execution_success,
     _maybe_create_pr_and_review,
@@ -45,6 +47,38 @@ def test_pr_number_from_url():
     assert _pr_number_from_url("https://github.com/oldcai/ScrumAI/issues/123") is None
 
 
+def test_gh_subprocess_env_strips_process_level_token_overrides(monkeypatch):
+    monkeypatch.setenv("GH_TOKEN", "stale-gh-token")
+    monkeypatch.setenv("GITHUB_TOKEN", "stale-github-token")
+
+    env = _gh_subprocess_env()
+
+    assert "GH_TOKEN" not in env
+    assert "GITHUB_TOKEN" not in env
+
+
+def test_format_gh_pr_create_error_preserves_non_auth_errors():
+    message = "pull request create failed: some unrelated problem"
+    assert _format_gh_pr_create_error(message) == message
+
+
+def test_format_gh_pr_create_error_adds_auth_diagnostics(monkeypatch):
+    import runners.auto_workspace as auto_workspace
+
+    monkeypatch.setattr(
+        auto_workspace,
+        "_gh_auth_status_summary",
+        lambda: "github.com | Logged in to github.com account LeoLee-Xiaohu | Token scopes: 'repo'",
+    )
+
+    message = "pull request create failed: GraphQL: Resource not accessible by personal access token (createPullRequest)"
+    formatted = _format_gh_pr_create_error(message)
+
+    assert "stale GH_TOKEN/GITHUB_TOKEN" in formatted
+    assert "Token scopes: 'repo'" in formatted
+    assert message in formatted
+
+
 def test_extract_execution_id_from_common_nested_shapes():
     assert _extract_execution_id({"execution_id": "exec-1"}) == "exec-1"
     assert _extract_execution_id({"session": {"execution_process_id": "exec-2"}}) == "exec-2"
@@ -76,6 +110,21 @@ def test_completed_execution_creates_pr_and_moves_issue_to_review(tmp_path, monk
     class FakeClient:
         def __init__(self):
             self.updated = []
+
+        def get_workspace_http(self, workspace_id, backend_url=None):
+            return False, None, ""
+
+        def get_workspace_editor_path_http(self, workspace_id, backend_url=None):
+            return False, None, ""
+
+        def get_workspace_repos_http(self, workspace_id, backend_url=None):
+            return False, None, ""
+
+        def get_workspace_summary_http(self, workspace_id, archived=False, backend_url=None):
+            return False, None, ""
+
+        def get_session_http(self, session_id, backend_url=None):
+            return False, None, ""
 
         def get_execution(self, execution_id):
             assert execution_id == "exec-1"
@@ -143,6 +192,21 @@ def test_missing_execution_id_is_recovered_from_latest_session(tmp_path, monkeyp
         def __init__(self):
             self.updated = []
 
+        def get_workspace_http(self, workspace_id, backend_url=None):
+            return False, None, ""
+
+        def get_workspace_editor_path_http(self, workspace_id, backend_url=None):
+            return False, None, ""
+
+        def get_workspace_repos_http(self, workspace_id, backend_url=None):
+            return False, None, ""
+
+        def get_workspace_summary_http(self, workspace_id, archived=False, backend_url=None):
+            return False, None, ""
+
+        def get_session_http(self, session_id, backend_url=None):
+            return False, None, ""
+
         def get_execution(self, execution_id):
             assert execution_id == "exec-recovered"
             return {"status": "completed", "exit_code": 0}
@@ -200,5 +264,83 @@ def test_missing_execution_id_is_recovered_from_latest_session(tmp_path, monkeyp
     )
 
     assert record["execution_id"] == "exec-recovered"
+    assert record["pr_state"] == "created"
+    assert record["issue_status_after_pr"] == "In review"
+
+
+def test_backend_summary_completion_creates_pr_without_execution_id(tmp_path, monkeypatch):
+    class FakeClient:
+        def __init__(self):
+            self.updated = []
+
+        def get_workspace_http(self, workspace_id, backend_url=None):
+            return True, {"id": workspace_id, "branch": "scrumai/test", "archived": False}, ""
+
+        def get_workspace_editor_path_http(self, workspace_id, backend_url=None):
+            return True, str(tmp_path), ""
+
+        def get_workspace_repos_http(self, workspace_id, backend_url=None):
+            return True, [{"id": "repo-1", "path": str(tmp_path), "target_branch": "main"}], ""
+
+        def get_workspace_summary_http(self, workspace_id, archived=False, backend_url=None):
+            return True, {
+                "workspace_id": workspace_id,
+                "latest_session_id": "session-1",
+                "latest_process_status": "completed",
+                "latest_process_completed_at": "2026-05-08T00:00:00+00:00",
+            }, ""
+
+        def get_session_http(self, session_id, backend_url=None):
+            return True, {"id": session_id, "agent_working_dir": None}, ""
+
+        def list_sessions(self, workspace_id):
+            return [{"id": "session-1"}]
+
+        def update_issue(self, issue_id, status):
+            self.updated.append((issue_id, status))
+            return True
+
+    def fake_create_pull_request(**kwargs):
+        assert kwargs["repo_path"] == str(tmp_path)
+        assert kwargs["head_branch"] == "scrumai/test"
+        return {
+            "url": "https://github.com/oldcai/ScrumAI/pull/125",
+            "number": 125,
+            "head": kwargs["head_branch"],
+            "base": kwargs["base_branch"],
+        }
+
+    import runners.auto_workspace as auto_workspace
+
+    monkeypatch.setattr(auto_workspace, "create_pull_request", fake_create_pull_request)
+
+    client = FakeClient()
+    issue = McpIssue(id="issue-1", simple_id="STORY-1", title="[STORY-1] Test", status="In progress")
+    record = {
+        "workspace_id": "workspace-1",
+        "session_id": "session-1",
+        "base_branch": "main",
+        "executor": "CODEX",
+        "repo_id": "repo-1",
+    }
+    mapping = {"issue_to_workspace": {"issue-1": record}}
+
+    _maybe_create_pr_and_review(
+        client=client,
+        issue=issue,
+        current_status=_normalize_status(issue.status),
+        record=record,
+        repo={"id": "repo-1"},
+        github_repo="oldcai/ScrumAI",
+        pr_base="main",
+        review_status="In review",
+        pr_draft=False,
+        mapping=mapping,
+        mapping_path=tmp_path / "mapping.json",
+        dry_run=False,
+    )
+
+    assert record["workspace_branch"] == "scrumai/test"
+    assert record["latest_process_status"] == "completed"
     assert record["pr_state"] == "created"
     assert record["issue_status_after_pr"] == "In review"
