@@ -1,5 +1,8 @@
+import subprocess
+
 from runners.auto_workspace import (
     IN_PROGRESS_STATUSES,
+    _ensure_workspace_base_branch_current,
     _ensure_workspace_issue_link,
     _extract_execution_id,
     _format_gh_pr_create_error,
@@ -12,6 +15,10 @@ from runners.auto_workspace import (
     _pr_number_from_url,
 )
 from mcp_adapter import McpIssue
+
+
+def _completed(args, stdout, returncode=0, stderr=""):
+    return subprocess.CompletedProcess(args=args, returncode=returncode, stdout=stdout, stderr=stderr)
 
 
 def test_parse_github_repo_from_supported_remote_urls():
@@ -83,6 +90,135 @@ def test_extract_execution_id_from_common_nested_shapes():
     assert _extract_execution_id({"execution_id": "exec-1"}) == "exec-1"
     assert _extract_execution_id({"session": {"execution_process_id": "exec-2"}}) == "exec-2"
     assert _extract_execution_id({"execution_process": {"id": "exec-3"}}) == "exec-3"
+
+
+def test_workspace_base_branch_check_passes_when_local_matches_remote(tmp_path, monkeypatch):
+    import runners.auto_workspace as auto_workspace
+
+    def fake_run_git(args, cwd, check):
+        command = tuple(args)
+        if command == ("rev-parse", "--show-toplevel"):
+            return _completed(args, str(tmp_path))
+        if command == ("fetch", "origin", "main"):
+            return _completed(args, "")
+        if command == ("rev-parse", "refs/heads/main"):
+            return _completed(args, "abc123")
+        if command == ("rev-parse", "refs/remotes/origin/main"):
+            return _completed(args, "abc123")
+        raise AssertionError(f"Unexpected git command: {args}")
+
+    monkeypatch.setattr(auto_workspace, "_run_git", fake_run_git)
+
+    ok, message = _ensure_workspace_base_branch_current(
+        repo={"name": "NeckFlappy", "path": str(tmp_path)},
+        base_branch="main",
+        sync=False,
+    )
+
+    assert ok is True
+    assert message == ""
+
+
+def test_workspace_base_branch_check_blocks_when_local_is_behind(tmp_path, monkeypatch):
+    import runners.auto_workspace as auto_workspace
+
+    def fake_run_git(args, cwd, check):
+        command = tuple(args)
+        if command == ("rev-parse", "--show-toplevel"):
+            return _completed(args, str(tmp_path))
+        if command == ("fetch", "origin", "main"):
+            return _completed(args, "")
+        if command == ("rev-parse", "refs/heads/main"):
+            return _completed(args, "local123")
+        if command == ("rev-parse", "refs/remotes/origin/main"):
+            return _completed(args, "remote123")
+        if command == ("merge-base", "--is-ancestor", "local123", "remote123"):
+            return _completed(args, "")
+        if command == ("merge-base", "--is-ancestor", "remote123", "local123"):
+            return _completed(args, "", returncode=1)
+        raise AssertionError(f"Unexpected git command: {args}")
+
+    monkeypatch.setattr(auto_workspace, "_run_git", fake_run_git)
+
+    ok, message = _ensure_workspace_base_branch_current(
+        repo={"name": "NeckFlappy", "path": str(tmp_path)},
+        base_branch="main",
+        sync=False,
+    )
+
+    assert ok is False
+    assert "--sync-base-branch" in message
+
+
+def test_workspace_base_branch_check_fast_forwards_when_requested(tmp_path, monkeypatch):
+    import runners.auto_workspace as auto_workspace
+
+    seen_commands = []
+
+    def fake_run_git(args, cwd, check):
+        seen_commands.append(tuple(args))
+        command = tuple(args)
+        if command == ("rev-parse", "--show-toplevel"):
+            return _completed(args, str(tmp_path))
+        if command == ("fetch", "origin", "main"):
+            return _completed(args, "")
+        if command == ("rev-parse", "refs/heads/main"):
+            return _completed(args, "local123")
+        if command == ("rev-parse", "refs/remotes/origin/main"):
+            return _completed(args, "remote123")
+        if command == ("merge-base", "--is-ancestor", "local123", "remote123"):
+            return _completed(args, "")
+        if command == ("merge-base", "--is-ancestor", "remote123", "local123"):
+            return _completed(args, "", returncode=1)
+        if command == ("checkout", "main"):
+            return _completed(args, "")
+        if command == ("merge", "--ff-only", "refs/remotes/origin/main"):
+            return _completed(args, "Updating local main")
+        raise AssertionError(f"Unexpected git command: {args}")
+
+    monkeypatch.setattr(auto_workspace, "_run_git", fake_run_git)
+
+    ok, message = _ensure_workspace_base_branch_current(
+        repo={"name": "NeckFlappy", "path": str(tmp_path)},
+        base_branch="main",
+        sync=True,
+    )
+
+    assert ok is True
+    assert message == ""
+    assert ("checkout", "main") in seen_commands
+    assert ("merge", "--ff-only", "refs/remotes/origin/main") in seen_commands
+
+
+def test_workspace_base_branch_check_blocks_when_local_is_ahead(tmp_path, monkeypatch):
+    import runners.auto_workspace as auto_workspace
+
+    def fake_run_git(args, cwd, check):
+        command = tuple(args)
+        if command == ("rev-parse", "--show-toplevel"):
+            return _completed(args, str(tmp_path))
+        if command == ("fetch", "origin", "main"):
+            return _completed(args, "")
+        if command == ("rev-parse", "refs/heads/main"):
+            return _completed(args, "local123")
+        if command == ("rev-parse", "refs/remotes/origin/main"):
+            return _completed(args, "remote123")
+        if command == ("merge-base", "--is-ancestor", "local123", "remote123"):
+            return _completed(args, "", returncode=1)
+        if command == ("merge-base", "--is-ancestor", "remote123", "local123"):
+            return _completed(args, "")
+        raise AssertionError(f"Unexpected git command: {args}")
+
+    monkeypatch.setattr(auto_workspace, "_run_git", fake_run_git)
+
+    ok, message = _ensure_workspace_base_branch_current(
+        repo={"name": "NeckFlappy", "path": str(tmp_path)},
+        base_branch="main",
+        sync=True,
+    )
+
+    assert ok is False
+    assert "ahead of origin/main" in message
 
 
 def test_conflict_when_linking_workspace_is_treated_as_already_linked(tmp_path):

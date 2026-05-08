@@ -40,6 +40,7 @@ def run_auto_workspace(args) -> bool:
     codex_model = getattr(args, "codex_model", "gpt-5.4") or "gpt-5.4"
     executor_model_id = codex_model if executor == "CODEX" else None
     base_branch = getattr(args, "base_branch", "main") or "main"
+    sync_base_branch = bool(getattr(args, "sync_base_branch", True))
     pr_base = getattr(args, "pr_base", None) or base_branch
     review_status = getattr(args, "review_status", "In review") or "In review"
     backend_url = getattr(args, "backend_url", None)
@@ -140,6 +141,7 @@ def run_auto_workspace(args) -> bool:
                         executor=executor,
                         executor_model_id=executor_model_id,
                         base_branch=base_branch,
+                        sync_base_branch=sync_base_branch,
                         mapping=mapping,
                         mapping_path=mapping_path,
                         dry_run=dry_run,
@@ -378,6 +380,7 @@ def _start_issue_workspace(
     executor: str,
     executor_model_id: str | None,
     base_branch: str,
+    sync_base_branch: bool,
     mapping: dict[str, Any],
     mapping_path: Path,
     dry_run: bool,
@@ -412,6 +415,21 @@ def _start_issue_workspace(
         })
         _save_mapping(mapping_path, mapping)
         return True
+
+    base_ready, base_message = _ensure_workspace_base_branch_current(
+        repo=repo,
+        base_branch=base_branch,
+        sync=sync_base_branch,
+    )
+    if not base_ready:
+        records[issue.id].update({
+            "state": "failed",
+            "error": base_message,
+            "failed_at": _utc_now(),
+        })
+        _save_mapping(mapping_path, mapping)
+        print(f"[error] failed to start workspace for {issue.title}: {base_message}")
+        return False
 
     try:
         result = client.start_workspace(
@@ -942,6 +960,106 @@ def create_pull_request(
         "github_repo": github_repo,
         "created_at": _utc_now(),
     }
+
+
+def _ensure_workspace_base_branch_current(
+    repo: dict[str, Any],
+    base_branch: str,
+    sync: bool,
+) -> tuple[bool, str]:
+    repo_path = str(repo.get("path") or "").strip()
+    repo_name = str(repo.get("name") or repo.get("id") or "<unknown repo>")
+    if not repo_path:
+        return False, (
+            f"Repo '{repo_name}' does not have a local path in Vibe Kanban, so ScrumAI cannot verify "
+            f"that '{base_branch}' matches origin/{base_branch} before creating the workspace."
+        )
+
+    repo_dir = Path(repo_path)
+    if not repo_dir.exists():
+        return False, f"Registered repo path does not exist: {repo_path}"
+
+    try:
+        _ensure_git_repo(repo_dir)
+    except Exception as e:
+        return False, str(e)
+
+    fetch_result = _run_git(["fetch", "origin", base_branch], cwd=str(repo_dir), check=False)
+    if fetch_result.returncode != 0:
+        message = fetch_result.stderr.strip() or fetch_result.stdout.strip() or "unknown git fetch error"
+        return False, f"Could not fetch origin/{base_branch} for repo '{repo_name}': {message}"
+
+    local_ref = f"refs/heads/{base_branch}"
+    remote_ref = f"refs/remotes/origin/{base_branch}"
+    local_sha = _git_rev_parse(str(repo_dir), local_ref)
+    remote_sha = _git_rev_parse(str(repo_dir), remote_ref)
+
+    if not remote_sha:
+        return False, f"Remote branch origin/{base_branch} was not found for repo '{repo_name}'."
+    if not local_sha:
+        return False, (
+            f"Local branch '{base_branch}' was not found for repo '{repo_name}'. "
+            "Create it from origin first, or re-register the repo after fixing local branches."
+        )
+    if local_sha == remote_sha:
+        return True, ""
+
+    local_is_ancestor = _git_is_ancestor(str(repo_dir), local_sha, remote_sha)
+    remote_is_ancestor = _git_is_ancestor(str(repo_dir), remote_sha, local_sha)
+
+    if local_is_ancestor and not remote_is_ancestor:
+        if sync:
+            sync_result = _run_git(
+                ["checkout", base_branch],
+                cwd=str(repo_dir),
+                check=False,
+            )
+            if sync_result.returncode != 0:
+                message = sync_result.stderr.strip() or sync_result.stdout.strip() or "unknown git checkout error"
+                return False, (
+                    f"Repo '{repo_name}' is behind origin/{base_branch}, but ScrumAI could not check out "
+                    f"'{base_branch}' to fast-forward it: {message}"
+                )
+            ff_result = _run_git(
+                ["merge", "--ff-only", remote_ref],
+                cwd=str(repo_dir),
+                check=False,
+            )
+            if ff_result.returncode != 0:
+                message = ff_result.stderr.strip() or ff_result.stdout.strip() or "unknown git merge error"
+                return False, (
+                    f"Repo '{repo_name}' is behind origin/{base_branch}, but ScrumAI could not fast-forward "
+                    f"'{base_branch}': {message}"
+                )
+            return True, ""
+        return False, (
+            f"Repo '{repo_name}' local '{base_branch}' is behind origin/{base_branch}. "
+            f"Sync it before creating workspaces, or rerun with --sync-base-branch."
+        )
+
+    if remote_is_ancestor and not local_is_ancestor:
+        return False, (
+            f"Repo '{repo_name}' local '{base_branch}' is ahead of origin/{base_branch}. "
+            "Workspace creation is blocked because the feature branch would include local-only base commits."
+        )
+
+    return False, (
+        f"Repo '{repo_name}' local '{base_branch}' has diverged from origin/{base_branch}. "
+        "Workspace creation is blocked until the base branch is reconciled."
+    )
+
+
+def _git_rev_parse(cwd: str, ref: str) -> str | None:
+    result = _run_git(["rev-parse", ref], cwd=cwd, check=False)
+    if result.returncode != 0:
+        return None
+    value = result.stdout.strip()
+    return value or None
+
+
+def _git_is_ancestor(cwd: str, left: str, right: str) -> bool:
+    result = _run_git(["merge-base", "--is-ancestor", left, right], cwd=cwd, check=False)
+    return result.returncode == 0
 
 
 def _ensure_gh_auth() -> None:

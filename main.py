@@ -742,6 +742,12 @@ Examples:
         help="Workspace base branch (default: main, corresponding to origin/main)",
     )
     p_auto_workspace.add_argument(
+        "--sync-base-branch",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Before creating each workspace, fast-forward the registered repo's local base branch to origin/<base-branch> when it is only behind (default: enabled; use --no-sync-base-branch to disable)",
+    )
+    p_auto_workspace.add_argument(
         "--executor", default="CODEX",
         help="Vibe Kanban executor/model to use (default: CODEX)",
     )

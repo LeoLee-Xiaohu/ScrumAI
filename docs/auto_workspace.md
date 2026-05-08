@@ -221,7 +221,9 @@ In progress -> In review
 
 - `executor` 使用 Vibe Kanban MCP schema 中的枚举值 `CODEX`，不是小写 `codex`。
 - `base branch` 在 Vibe Kanban MCP 的 `start_workspace.repositories[].branch` 中传入。用户语义上的 `origin/main` 应映射为本地分支名 `main`；真正创建 worktree 时由 Vibe Kanban 基于该 repo 的 `origin/main` 同步。
-- 如果需要严格确保使用最新 `origin/main`，可以在创建 workspace 前增加可选 preflight：检查 repo 当前 main 是否跟踪 `origin/main`，必要时提示用户在 Vibe Kanban / git 中 fetch。
+- 当前实现已经在创建 workspace 前增加 base branch preflight：会先 `fetch origin <base-branch>`，再检查已注册 repo 的本地 `<base-branch>` 是否与 `origin/<base-branch>` 一致。
+- 如果本地 base branch 落后于 `origin/<base-branch>`，当前默认会自动 fast-forward，再继续创建 workspace；如需关闭该行为，可显式传 `--no-sync-base-branch`。
+- 如果本地 base branch ahead 或 diverged，watcher 仍会拒绝创建 workspace，因为自动同步无法安全处理这两种情况。
 
 ## Prompt 设计
 
@@ -325,6 +327,7 @@ uv run main.py auto-workspace \
 | `--repo-name` | 无，必填 | Vibe Kanban 中已注册的 repository 名称或路径匹配关键字 |
 | `--repo-id` | 无 | Vibe Kanban repo UUID；当 repo name 重复时必须使用 |
 | `--base-branch` | `main` | workspace 基础分支；对应用户要求的 `origin/main` |
+| `--sync-base-branch` / `--no-sync-base-branch` | 默认开启 | 创建 workspace 前，如本地 base branch 仅落后于 `origin/<base-branch>`，自动 fast-forward 到最新远端；如不希望 watcher 修改本地 base branch，可显式传 `--no-sync-base-branch` |
 | `--executor` | `CODEX` | Vibe Kanban coding model / executor |
 | `--github-repo` | 从 repo remote 推断 | GitHub PR 目标仓库，格式 `owner/repo` |
 | `--review-status` | `In review` | agent 完成并创建 PR 后移动到的看板状态 |
@@ -348,6 +351,7 @@ uv run main.py auto-workspace \
 - Vibe Kanban MCP / backend 可用，负责 workspace 生命周期。
 - 本机 `git` / `gh` 可用，负责 `push` 和 `create PR`。
 - 目标 repo 的 GitHub 认证和权限已经在当前机器上配置完成。
+- 已注册 repo 的本地 `--base-branch` 会在创建 workspace 前与 `origin/<base-branch>` 对齐；如果只是 behind，watcher 默认会先 fast-forward；如果 ahead 或 diverged，仍会阻止创建 workspace，避免从不正确的本地基线开 feature branch。
 
 ### 辅助 CLI
 
@@ -1048,6 +1052,40 @@ gh pr create --repo owner/repo --base main --head <branch> --title "test" --body
 1. 停掉旧 watcher。
 2. 重新启动 `uv run main.py auto-workspace ...`，让新进程继承最新认证状态。
 3. 不要在启动 watcher 的 shell 中额外注入过期的 `GH_TOKEN` / `GITHUB_TOKEN`。
+
+### PR 创建后频繁出现 conflict
+
+如果多个自动创建的 PR 经常在 GitHub 上显示 “This branch has conflicts that must be resolved”，优先怀疑 workspace 的 feature branch 基线不是最新 `origin/main`。
+
+当前实现已经在创建 workspace 前做 base branch preflight：
+
+1. `git fetch origin <base-branch>`
+2. 检查本地 `<base-branch>` 是否与 `origin/<base-branch>` 指向同一提交
+3. 如本地 branch 仅 behind，则默认自动 fast-forward；如不希望 watcher 修改本地 branch，可显式传 `--no-sync-base-branch`
+4. 如本地 branch ahead 或 diverged，则直接拒绝创建 workspace
+
+因此，新的 workspace 不应再基于明显滞后的本地 `main` 创建。
+
+需要注意：
+
+- 这只能避免“从旧基线开分支”导致的系统性冲突。
+- 如果 feature branch 创建后，`origin/main` 又继续前进，并且双方修改了同一批文件，PR 仍然可能出现正常的 Git conflict。这类冲突无法通过 preflight 完全消除。
+
+推荐启动方式：
+
+```bash
+uv run main.py auto-workspace \
+  --project-name "NeckFlappy" \
+  --repo-name "NeckFlappy" \
+  --github-repo "Leolee-Xiaohu/NeckFlappy" \
+  --base-branch main
+```
+
+如需关闭自动 fast-forward：
+
+```bash
+uv run main.py auto-workspace ... --no-sync-base-branch
+```
 
 ### In review 状态不存在
 
