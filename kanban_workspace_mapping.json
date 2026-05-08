@@ -244,7 +244,7 @@
       "issue_status_updated_at": "2026-05-08T05:38:59.974585+00:00"
     },
     "bcc10e25-ae2e-4a75-b0fb-481c1d2a8dbb": {
-      "state": "failed",
+      "state": "created",
       "issue_id": "bcc10e25-ae2e-4a75-b0fb-481c1d2a8dbb",
       "issue_simple_id": "LEO-84",
       "issue_title": "[STORY-003] Build Webcam Preview & HUD Status",
@@ -252,9 +252,46 @@
       "base_branch": "main",
       "executor": "CODEX",
       "executor_model_id": "gpt-5.4",
-      "started_at": "2026-05-08T06:15:32.820032+00:00",
-      "error": "Repo 'NeckFlappy' does not have a local path in Vibe Kanban, so ScrumAI cannot verify that 'main' matches origin/main before creating the workspace.",
-      "failed_at": "2026-05-08T06:15:34.940960+00:00"
+      "started_at": "2026-05-08T06:49:04.005826+00:00",
+      "workspace_id": "13d2bd5f-52b9-4e96-9fb1-9c2ae6bdde8f",
+      "session_id": "0043d875-59a6-4f08-943c-60dab7e111ed",
+      "execution_id": null,
+      "workspace_branch": "vk/13d2-story-003-build",
+      "created_at": "2026-05-08T06:49:09.330367+00:00",
+      "start_workspace_response": {
+        "workspace_id": "13d2bd5f-52b9-4e96-9fb1-9c2ae6bdde8f"
+      },
+      "workspace_archived": false,
+      "workspace_container_ref": "/var/folders/cd/s_cldwzx03jdbr46xjs0_tkc0000gn/T/vibe-kanban/worktrees/13d2-story-003-build",
+      "repo_path": "/var/folders/cd/s_cldwzx03jdbr46xjs0_tkc0000gn/T/vibe-kanban/worktrees/13d2-story-003-build/NeckFlappy",
+      "working_dir": "/var/folders/cd/s_cldwzx03jdbr46xjs0_tkc0000gn/T/vibe-kanban/worktrees/13d2-story-003-build/NeckFlappy",
+      "source_repo_path": "/Users/leo/AI-Projects/NeckFlappy/",
+      "target_branch": "main",
+      "latest_process_status": "completed",
+      "agent_working_dir": "NeckFlappy",
+      "issue_linked": true,
+      "issue_linked_at": "2026-05-08T06:49:15.226635+00:00",
+      "latest_process_completed_at": "2026-05-08T06:51:47.959717Z",
+      "execution": {
+        "state": "completed",
+        "raw": {
+          "status": "completed",
+          "completed_at": "2026-05-08T06:51:47.959717Z"
+        },
+        "updated_at": "2026-05-08T06:51:53.365887+00:00"
+      },
+      "pull_request": {
+        "url": "https://github.com/LeoLee-Xiaohu/NeckFlappy/pull/7",
+        "number": 7,
+        "head": "vk/13d2-story-003-build",
+        "base": "main",
+        "github_repo": "Leolee-Xiaohu/NeckFlappy",
+        "created_at": "2026-05-08T06:51:58.575485+00:00"
+      },
+      "pr_state": "created",
+      "pr_created_at": "2026-05-08T06:51:58.575559+00:00",
+      "issue_status_after_pr": "In review",
+      "issue_status_updated_at": "2026-05-08T06:52:01.249795+00:00"
     },
     "f32f3610-2bb3-4f70-8420-ed02b71b4945": {
       "state": "created",
