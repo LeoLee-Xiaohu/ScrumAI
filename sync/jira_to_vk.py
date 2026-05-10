@@ -151,6 +151,18 @@ class SyncStats:
         return self.created + self.updated_status + self.updated_content
 
 
+@dataclass(frozen=True)
+class VkIssueSnapshot:
+    """Small, Forge-friendly view of a VK card bound to a Jira issue key."""
+
+    jira_key: str
+    id: str
+    simple_id: str
+    title: str
+    status: str
+    priority: str | None = None
+
+
 class JiraToVkSyncer:
     """Stateless-ish sync: Jira (truth) -> VK (mirror).
 
@@ -217,6 +229,39 @@ class JiraToVkSyncer:
                 continue
             index[key] = issue
         return index
+
+    def get_vk_issue_for_key(self, jira_key: str) -> VkIssueSnapshot | None:
+        """Return the live VK card snapshot bound to `jira_key`, if present.
+
+        This is a read-only helper for the Forge panel. It deliberately uses
+        the same title-prefix binding as the sync path, so the UI only shows
+        cards that actually match the Jira key instead of rendering whatever
+        the VK workspace endpoint happens to return.
+        """
+        if not jira_key.startswith(self._jira_project_key + "-"):
+            logger.warning(
+                "get_vk_issue_for_key refused: key %r is outside configured project %r",
+                jira_key,
+                self._jira_project_key,
+            )
+            return None
+
+        vk_issues = self._mcp.list_all_issues(
+            self._vk_project_id,
+            page_size=self._page_size,
+        )
+        issue = self._index_vk_by_key(vk_issues).get(jira_key)
+        if issue is None:
+            return None
+
+        return VkIssueSnapshot(
+            jira_key=jira_key,
+            id=issue.id,
+            simple_id=issue.simple_id,
+            title=issue.title,
+            status=issue.status,
+            priority=issue.priority,
+        )
 
     # ----- per-issue handlers -----
 

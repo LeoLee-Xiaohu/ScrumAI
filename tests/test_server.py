@@ -15,6 +15,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from jira_client import JiraClient
+from mcp_adapter import McpIssue
 from sync.engine import SyncEngine
 from sync.server import _report_to_dict, create_app
 from sync.engine import TickReport
@@ -190,6 +191,43 @@ def test_tick_for_key_routes_targeted_sync() -> None:
     # Targeted path must NOT trigger a /search/jql sweep.
     assert search_calls == []
     assert get_issue_calls == ["SCRUM-800"]
+
+
+def test_get_vk_issue_for_key_returns_card_snapshot() -> None:
+    """Forge issue panels can render the actual VK card title/status."""
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        return httpx.Response(404)
+
+    mcp = FakeMcpClient(
+        issues=[
+            McpIssue(
+                id="vk-63",
+                simple_id="63",
+                title="[SCRUM-63] Implement customer-facing status card",
+                status="inprogress",
+                priority="high",
+            )
+        ]
+    )
+    engine, jira = make_engine(handler, mcp=mcp)
+    app = create_app(engine, api_key="k", enable_poll_task=False)
+
+    with jira, TestClient(app) as client:
+        resp = client.get("/vk/issue/SCRUM-63", headers={"X-API-Key": "k"})
+
+    assert resp.status_code == 200
+    assert resp.json() == {
+        "issueKey": "SCRUM-63",
+        "found": True,
+        "vkIssue": {
+            "id": "vk-63",
+            "simpleId": "63",
+            "title": "[SCRUM-63] Implement customer-facing status card",
+            "status": "inprogress",
+            "priority": "high",
+        },
+    }
 
 
 def test_tick_for_key_requires_api_key() -> None:

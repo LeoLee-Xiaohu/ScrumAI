@@ -778,3 +778,45 @@ def test_tick_for_key_refuses_keys_outside_configured_project() -> None:
     assert stats.skipped_unsupported == 1
     assert stats.created == 0
     assert mcp.created_calls == []
+
+
+# ----- VK issue lookup for Forge display -----
+
+
+def test_get_vk_issue_for_key_returns_real_vk_card_snapshot() -> None:
+    """Forge needs real VK card data, not placeholder workspace text."""
+
+    mcp = FakeMcpClient(
+        issues=[
+            McpIssue(
+                id="vk-63",
+                simple_id="63",
+                title="[SCRUM-63] Implement customer-facing status card",
+                status="inprogress",
+                priority="high",
+            ),
+            McpIssue(
+                id="vk-other",
+                simple_id="99",
+                title="[SCRUM-99] Unrelated",
+                status="todo",
+            ),
+        ]
+    )
+    with make_jira_client(lambda _req: httpx.Response(404)) as jira:
+        syncer = JiraToVkSyncer(
+            jira=jira,
+            mcp=mcp,
+            jira_project_key="SCRUM",
+            vk_project_id="p",
+        )
+
+        snapshot = syncer.get_vk_issue_for_key("SCRUM-63")
+
+    assert snapshot is not None
+    assert snapshot.jira_key == "SCRUM-63"
+    assert snapshot.id == "vk-63"
+    assert snapshot.simple_id == "63"
+    assert snapshot.title == "[SCRUM-63] Implement customer-facing status card"
+    assert snapshot.status == "inprogress"
+    assert snapshot.priority == "high"

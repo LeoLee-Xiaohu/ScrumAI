@@ -20,6 +20,10 @@ POST /sync/tick/{jira_key}
     action so the kanban reflects the change in <1s instead of waiting
     for the next polling tick.
 
+GET  /vk/issue/{jira_key}
+    Read-only lookup for the VK card bound to one Jira key. Forge uses this
+    to show the real card title/status in the Jira issue panel.
+
 Auth: `/sync/*` endpoints require `X-API-Key: <api_key>` iff the server
 was started with a non-empty `api_key`. /health is intentionally
 unauthenticated so probes don't need credentials.
@@ -45,6 +49,7 @@ from fastapi import FastAPI, Header, HTTPException, Path, status
 from fastapi.responses import JSONResponse
 
 from sync.engine import SyncEngine, TickReport
+from sync.jira_to_vk import VkIssueSnapshot
 
 # Jira issue keys are `<PROJECT>-<NUMBER>`. Project keys are uppercase
 # letters/digits/underscores starting with a letter, length 2-16 in practice;
@@ -98,6 +103,24 @@ def _check_api_key(state: ServerState, x_api_key: str | None) -> None:
 def _report_to_dict(report: TickReport) -> dict[str, int]:
     """JSON-friendly view of a TickReport. `asdict` plus the derived total."""
     return {**asdict(report), "total_writes": report.total_writes()}
+
+
+def _vk_issue_to_dict(issue_key: str, issue: VkIssueSnapshot | None) -> dict[str, object]:
+    if issue is None:
+        return {"issueKey": issue_key, "found": False}
+
+    raw = asdict(issue)
+    return {
+        "issueKey": issue_key,
+        "found": True,
+        "vkIssue": {
+            "id": raw["id"],
+            "simpleId": raw["simple_id"],
+            "title": raw["title"],
+            "status": raw["status"],
+            "priority": raw["priority"],
+        },
+    }
 
 
 async def _poll_loop(state: ServerState) -> None:
@@ -232,6 +255,21 @@ def create_app(
         if report.total_writes() > 0:
             state.poll_wake.set()
         return JSONResponse(_report_to_dict(report))
+
+    @app.get("/vk/issue/{jira_key}")
+    async def get_vk_issue(
+        jira_key: str = Path(
+            ...,
+            pattern=_JIRA_KEY_RE,
+            description="Jira issue key, e.g. SCRUM-123",
+        ),
+        x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+    ) -> JSONResponse:
+        state: ServerState = app.state.sync
+        _check_api_key(state, x_api_key)
+        async with state.tick_lock:
+            issue = await asyncio.to_thread(state.engine.get_vk_issue_for_key, jira_key)
+        return JSONResponse(_vk_issue_to_dict(jira_key, issue))
 
     return app
 
