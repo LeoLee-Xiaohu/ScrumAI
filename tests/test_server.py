@@ -230,6 +230,30 @@ def test_get_vk_issue_for_key_returns_card_snapshot() -> None:
     }
 
 
+def test_get_vk_issue_returns_503_when_vk_silently_returns_empty() -> None:
+    """Transport failure must surface as 503, not as `found: false`.
+
+    Otherwise Forge would interpret the empty-list-under-failure mode as
+    "no mirror exists" and could trigger a duplicate create on the next
+    user action.
+    """
+    def handler(req: httpx.Request) -> httpx.Response:
+        return httpx.Response(404)
+
+    mcp = FakeMcpClient()  # empty MCP = silent-failure simulation
+    engine, jira = make_engine(handler, mcp=mcp)
+    # Pre-poison the high-water mark on the underlying syncer so the lookup
+    # treats the empty list as transient failure rather than cold start.
+    engine._jira_to_vk._last_vk_bound_count = 3
+    app = create_app(engine, api_key="k", enable_poll_task=False)
+
+    with jira, TestClient(app) as client:
+        resp = client.get("/vk/issue/SCRUM-63", headers={"X-API-Key": "k"})
+
+    assert resp.status_code == 503
+    assert resp.json() == {"issueKey": "SCRUM-63", "error": "vk_unavailable"}
+
+
 def test_tick_for_key_requires_api_key() -> None:
     def handler(req: httpx.Request) -> httpx.Response:
         return httpx.Response(404)

@@ -49,7 +49,7 @@ from fastapi import FastAPI, Header, HTTPException, Path, status
 from fastapi.responses import JSONResponse
 
 from sync.engine import SyncEngine, TickReport
-from sync.jira_to_vk import VkIssueSnapshot
+from sync.jira_to_vk import VkBackendUnavailableError, VkIssueSnapshot
 
 # Jira issue keys are `<PROJECT>-<NUMBER>`. Project keys are uppercase
 # letters/digits/underscores starting with a letter, length 2-16 in practice;
@@ -268,7 +268,21 @@ def create_app(
         state: ServerState = app.state.sync
         _check_api_key(state, x_api_key)
         async with state.tick_lock:
-            issue = await asyncio.to_thread(state.engine.get_vk_issue_for_key, jira_key)
+            try:
+                issue = await asyncio.to_thread(
+                    state.engine.get_vk_issue_for_key, jira_key
+                )
+            except VkBackendUnavailableError as e:
+                # Distinguish "VK is temporarily silent" from "card doesn't
+                # exist". Returning {"found": false} here would let Forge
+                # decide a card needs creating when one already exists.
+                logger.warning(
+                    "get_vk_issue %s: VK backend unavailable: %s", jira_key, e
+                )
+                return JSONResponse(
+                    {"issueKey": jira_key, "error": "vk_unavailable"},
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                )
         return JSONResponse(_vk_issue_to_dict(jira_key, issue))
 
     return app

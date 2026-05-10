@@ -13,6 +13,7 @@ from sync.engine import MirrorLedger
 from sync.jira_to_vk import (
     JiraIssueSnapshot,
     JiraToVkSyncer,
+    VkBackendUnavailableError,
     _adf_to_plain,
     make_vk_title,
     parse_jira_key_from_title,
@@ -820,3 +821,60 @@ def test_get_vk_issue_for_key_returns_real_vk_card_snapshot() -> None:
     assert snapshot.title == "[SCRUM-63] Implement customer-facing status card"
     assert snapshot.status == "inprogress"
     assert snapshot.priority == "high"
+
+
+def test_get_vk_issue_for_key_raises_when_vk_silently_returns_empty() -> None:
+    """Lookup must apply the same empty-list guard as `tick()`.
+
+    Regression for the duplicate-mirror risk: if VK MCP returns [] under a
+    transport failure (SSH tunnel down, etc.), returning None here would
+    let Forge treat an existing card as missing and trigger a re-create on
+    the next user action.
+    """
+    mcp = FakeMcpClient()  # empty MCP simulates the silent-failure mode
+    with make_jira_client(lambda _req: httpx.Response(404)) as jira:
+        syncer = JiraToVkSyncer(
+            jira=jira, mcp=mcp, jira_project_key="SCRUM", vk_project_id="p"
+        )
+        # Pre-set the high-water mark — same pattern tick()'s test uses to
+        # simulate "we previously saw bound tasks".
+        syncer._last_vk_bound_count = 4
+
+        with pytest.raises(VkBackendUnavailableError):
+            syncer.get_vk_issue_for_key("SCRUM-63")
+
+
+def test_get_vk_issue_for_key_returns_none_on_cold_start_with_empty_vk() -> None:
+    """Cold start (no high-water mark) must NOT raise on an empty VK list.
+
+    A fresh process hasn't observed VK yet, so an empty list is genuinely
+    ambiguous — same cold-start contract as `tick()`. Returning None here
+    is the conservative read-only behavior.
+    """
+    mcp = FakeMcpClient()  # empty
+    with make_jira_client(lambda _req: httpx.Response(404)) as jira:
+        syncer = JiraToVkSyncer(
+            jira=jira, mcp=mcp, jira_project_key="SCRUM", vk_project_id="p"
+        )
+        # _last_vk_bound_count defaults to 0 — cold start.
+        assert syncer.get_vk_issue_for_key("SCRUM-63") is None
+
+
+def test_get_vk_issue_for_key_raises_when_mcp_list_call_throws() -> None:
+    """Network/MCP exceptions must surface as VkBackendUnavailableError.
+
+    Mirrors `tick()`'s defensive try/except around `list_all_issues`. If
+    the exception propagated raw, the HTTP layer would emit a generic 500
+    and Forge's transport-failure branch would still render "no mirror" —
+    same duplicate-create risk as the silent-empty path.
+    """
+    class _RaisingMcp(FakeMcpClient):
+        def list_all_issues(self, *_args, **_kwargs):  # type: ignore[no-untyped-def]
+            raise RuntimeError("MCP transport closed")
+
+    with make_jira_client(lambda _req: httpx.Response(404)) as jira:
+        syncer = JiraToVkSyncer(
+            jira=jira, mcp=_RaisingMcp(), jira_project_key="SCRUM", vk_project_id="p"
+        )
+        with pytest.raises(VkBackendUnavailableError):
+            syncer.get_vk_issue_for_key("SCRUM-63")
