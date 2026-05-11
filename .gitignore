@@ -46,6 +46,7 @@ score_result.json
 brainstorm_result.json
 dispatch_evaluation.json
 kanban_mapping.json
+kanban_workspace_mapping.json
 *.bak
 
 # Local Tools & Dependencies

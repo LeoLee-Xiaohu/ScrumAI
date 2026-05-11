@@ -6,9 +6,9 @@ Mirrors the 4-phase Socratic dialogue in scrumai-forge:
 - src/frontend/components/brainstorm/ (wizard UI)
 
 Usage:
-    python main.py brainstorm
-    python main.py brainstorm -f ticket.md
-    python main.py brainstorm -t "Build a REST API for user management"
+    uv run main.py brainstorm
+    uv run main.py brainstorm -f ticket.md
+    uv run main.py brainstorm -t "Build a REST API for user management"
 """
 
 import json

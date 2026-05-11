@@ -48,16 +48,16 @@ Use the CLI tool to verify your changes before submitting a PR:
 
 ```bash
 # Test brainstorm prompt
-uv run python main.py brainstorm -f ticket.md
+uv run main.py brainstorm -f ticket.md
 
 # Test scoring prompt
-uv run python main.py score -t "Your test issue description"
+uv run main.py score -t "Your test issue description"
 
 # Test role dispatch
-uv run python main.py dispatch
+uv run main.py dispatch
 
 # List all prompts
-uv run python main.py prompts
+uv run main.py prompts
 ```
 
 ### 4. Submit a Pull Request

@@ -100,23 +100,23 @@ Run commands using `uv run` to ensure it uses the correct virtual environment.
 ### Interactive Brainstorm
 
 ```bash
-uv run python main.py brainstorm
-uv run python main.py brainstorm -f ticket.md  # With context
+uv run main.py brainstorm
+uv run main.py brainstorm -f ticket.md  # With context
 ```
 
 ### Score Issue Readiness
 
 ```bash
-uv run python main.py score -f ticket.md
-uv run python main.py score -t "Build a login page with auth"
+uv run main.py score -f ticket.md
+uv run main.py score -t "Build a login page with auth"
 ```
 
 ### Decompose a Goal into Tasks
 
 ```bash
-uv run python main.py decompose -t "Build a REST API for item management"
-uv run python main.py decompose -f goal.md
-uv run python main.py decompose -f goal.md -o my_tasks.json
+uv run main.py decompose -t "Build a REST API for item management"
+uv run main.py decompose -f goal.md
+uv run main.py decompose -f goal.md -o my_tasks.json
 ```
 
 ### Dispatch Roles for Tasks
@@ -124,8 +124,8 @@ uv run python main.py decompose -f goal.md -o my_tasks.json
 Reads `decomposed_task.json` and assigns roles with autonomy levels:
 
 ```bash
-uv run python main.py dispatch
-uv run python main.py dispatch -f my_tasks.json -o my_dispatch.json
+uv run main.py dispatch
+uv run main.py dispatch -f my_tasks.json -o my_dispatch.json
 ```
 
 ### Evaluate Dispatch Accuracy
@@ -133,9 +133,9 @@ uv run python main.py dispatch -f my_tasks.json -o my_dispatch.json
 Compares AI-generated role assignments to original human assignments:
 
 ```bash
-uv run python main.py evaluate-dispatch
-uv run python main.py evaluate-dispatch -i decomposed_task.json -d dispatched_task.json
-uv run python main.py evaluate-dispatch -o my_evaluation.json
+uv run main.py evaluate-dispatch
+uv run main.py evaluate-dispatch -i decomposed_task.json -d dispatched_task.json
+uv run main.py evaluate-dispatch -o my_evaluation.json
 ```
 
 ### Export Dispatched Tasks to Vibe Kanban
@@ -144,8 +144,8 @@ Exports tasks from `decomposed_task.json` enriched with dispatch results from
 `dispatched_task.json`:
 
 ```bash
-uv run python main.py export-kanban -d my_dispatch.json --project-name "Your Project Name"
-uv run python main.py export-kanban --project-name "Your Project Name"  # uses dispatched_task.json by default
+uv run main.py export-kanban -d my_dispatch.json --project-name "Your Project Name"
+uv run main.py export-kanban --project-name "Your Project Name"  # uses dispatched_task.json by default
 ```
 
 ### Remove ScrumAI Tickets from a Vibe Kanban Project
@@ -153,7 +153,7 @@ uv run python main.py export-kanban --project-name "Your Project Name"  # uses d
 Deletes only tickets recognized as ScrumAI exports in the target Vibe Kanban project via MCP:
 
 ```bash
-uv run python main.py clear-kanban --project-name "Your Project Name" --yes
+uv run main.py clear-kanban --project-name "Your Project Name" --yes
 ```
 
 The command identifies ScrumAI tickets by the Markdown markers added during export, with a title-pattern fallback. `--yes` is required because this operation is destructive.
@@ -161,7 +161,7 @@ The command identifies ScrumAI tickets by the Markdown markers added during expo
 ### List Available Prompts
 
 ```bash
-uv run python main.py prompts
+uv run main.py prompts
 ```
 
 ## Output Files
@@ -251,6 +251,6 @@ The `prompts/` directory is the single source of truth for all ScrumAI system pr
 
 To see all available options:
 ```bash
-uv run python main.py --help
-uv run python main.py <command> --help
+uv run main.py --help
+uv run main.py <command> --help
 ```
