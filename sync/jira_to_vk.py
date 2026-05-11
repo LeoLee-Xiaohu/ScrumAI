@@ -151,6 +151,31 @@ class SyncStats:
         return self.created + self.updated_status + self.updated_content
 
 
+@dataclass(frozen=True)
+class VkIssueSnapshot:
+    """Small, Forge-friendly view of a VK card bound to a Jira issue key."""
+
+    jira_key: str
+    id: str
+    simple_id: str
+    title: str
+    status: str
+    priority: str | None = None
+
+
+class VkBackendUnavailableError(RuntimeError):
+    """Raised when a VK list call signals transport failure.
+
+    Two failure modes both surface as this error so callers (Forge's issue
+    panel) can distinguish "VK is temporarily silent" from "card doesn't
+    exist":
+    1. The MCP list call raises (network error, MCP crash).
+    2. vibe-kanban's MCP server returns a well-formed empty issues list
+       when its backend is unreachable, after a previous tick observed
+       N>0 bound tasks — same signature `tick()` uses.
+    """
+
+
 class JiraToVkSyncer:
     """Stateless-ish sync: Jira (truth) -> VK (mirror).
 
@@ -217,6 +242,69 @@ class JiraToVkSyncer:
                 continue
             index[key] = issue
         return index
+
+    def get_vk_issue_for_key(self, jira_key: str) -> VkIssueSnapshot | None:
+        """Return the live VK card snapshot bound to `jira_key`, if present.
+
+        This is a read-only helper for the Forge panel. It deliberately uses
+        the same title-prefix binding as the sync path, so the UI only shows
+        cards that actually match the Jira key instead of rendering whatever
+        the VK workspace endpoint happens to return.
+
+        Raises `VkBackendUnavailableError` for two transport-failure modes:
+        an exception from `list_all_issues` (network/MCP crash), or a
+        bound-task count of 0 after a previous `tick()` saw N>0 — same
+        signature `tick()` uses. Cold start (`_last_vk_bound_count == 0`)
+        still returns None on miss, matching `tick()`'s cold-start contract.
+        """
+        if not jira_key.startswith(self._jira_project_key + "-"):
+            logger.warning(
+                "get_vk_issue_for_key refused: key %r is outside configured project %r",
+                jira_key,
+                self._jira_project_key,
+            )
+            return None
+
+        try:
+            vk_issues = self._mcp.list_all_issues(
+                self._vk_project_id,
+                page_size=self._page_size,
+            )
+        except Exception as e:
+            # Mirror tick()'s defensive posture: an MCP exception is the
+            # other half of "VK is unreachable". Without this, a network
+            # error would propagate as 500 and Forge's transport-failure
+            # branch would still render "no mirror" — same duplicate-create
+            # risk as the silent-empty path.
+            raise VkBackendUnavailableError(
+                f"VK list call failed: {e}"
+            ) from e
+
+        vk_by_key = self._index_vk_by_key(vk_issues)
+
+        # Same guard as tick(): VK MCP responds with a well-formed empty
+        # issues list when its backend is unreachable. Returning None here
+        # would tell Forge "no mirror exists" and could trigger a duplicate
+        # mirror create on the next user action. On cold start we have no
+        # baseline, so we let it through (consistent with tick()).
+        if not vk_by_key and self._last_vk_bound_count > 0:
+            raise VkBackendUnavailableError(
+                f"VK list returned 0 bound tasks but {self._last_vk_bound_count} "
+                f"were seen last tick — treating as transient MCP/VK failure"
+            )
+
+        issue = vk_by_key.get(jira_key)
+        if issue is None:
+            return None
+
+        return VkIssueSnapshot(
+            jira_key=jira_key,
+            id=issue.id,
+            simple_id=issue.simple_id,
+            title=issue.title,
+            status=issue.status,
+            priority=issue.priority,
+        )
 
     # ----- per-issue handlers -----
 

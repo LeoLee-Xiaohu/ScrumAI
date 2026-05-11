@@ -153,6 +153,9 @@ curl -X POST https://scrumai.oldcai.com/sync/tick \
 
 curl -X POST https://scrumai.oldcai.com/sync/tick/SCRUM-123 \
      -H "X-API-Key: $YOUR_KEY"
+
+curl https://scrumai.oldcai.com/vk/issue/SCRUM-123 \
+     -H "X-API-Key: $YOUR_KEY"
 ```
 
 A wrong / missing key returns 401. `/health` is intentionally
