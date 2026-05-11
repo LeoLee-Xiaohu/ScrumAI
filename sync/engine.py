@@ -31,7 +31,7 @@ from dataclasses import dataclass
 from jira_client import JiraClient
 from mcp_adapter import McpClient
 
-from .jira_to_vk import JiraToVkSyncer, SyncStats
+from .jira_to_vk import JiraToVkSyncer, SyncStats, VkIssueSnapshot
 from .vk_to_jira import VkSyncStats, VkToJiraSyncer
 
 logger = logging.getLogger(__name__)
@@ -258,6 +258,10 @@ class SyncEngine:
             j2v_call=lambda: self._jira_to_vk.tick_for_key(jira_key),
             v2j_call=lambda: self._vk_to_jira.tick_for_key(jira_key),
         )
+
+    def get_vk_issue_for_key(self, jira_key: str) -> VkIssueSnapshot | None:
+        """Read the VK mirror card for one Jira key without mutating state."""
+        return self._jira_to_vk.get_vk_issue_for_key(jira_key)
 
     def run_loop(self) -> None:
         """Tick forever (or until `stop()`), with adaptive interval.
